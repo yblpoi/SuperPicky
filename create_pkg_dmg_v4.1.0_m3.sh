@@ -60,8 +60,20 @@ log_step "步骤 2/8: PyInstaller 打包应用"
 log_info "激活 .venv 虚拟环境..."
 source .venv/bin/activate
 
+# 注入 Git Commit Hash
+COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_INFO_FILE="core/build_info.py"
+BUILD_INFO_BACKUP="${BUILD_INFO_FILE}.backup"
+cp "${BUILD_INFO_FILE}" "${BUILD_INFO_BACKUP}"
+sed -i.tmp "s/COMMIT_HASH = None.*/COMMIT_HASH = \"${COMMIT_HASH}\"/" "${BUILD_INFO_FILE}"
+rm -f "${BUILD_INFO_FILE}.tmp"
+log_info "  Commit Hash: ${COMMIT_HASH}"
+
 log_info "开始 PyInstaller 打包..."
 pyinstaller SuperPicky.spec --clean --noconfirm
+
+# 恢复原始 build_info.py
+mv "${BUILD_INFO_BACKUP}" "${BUILD_INFO_FILE}"
 
 if [ ! -d "dist/${APP_NAME}.app" ]; then
     log_error "打包失败！未找到 dist/${APP_NAME}.app"
