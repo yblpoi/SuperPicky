@@ -23,7 +23,6 @@ _RATING_CONFIGS = [
     (2,  "★★",    COLORS['star_gold']),
     (1,  "★",     COLORS['star_gold']),
     (0,  "0",     COLORS['text_tertiary']),
-    (-1, "—",     COLORS['text_muted']),
 ]
 
 # 对焦状态颜色（与缩略图圆点一致）

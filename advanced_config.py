@@ -82,6 +82,9 @@ class AdvancedConfig:
         # 可选值: "filename" | "sharpness_desc" | "aesthetic_desc"
         "browser_sort": "sharpness_desc",
 
+        # 浏览器删除确认弹窗（首次弹窗后可勾选「不再确认」关闭）
+        "delete_confirm": True,
+
         # 主界面复选框状态
         "flight_check": True,    # 飞鸟检测默认开启
         "burst_check": True,     # 连拍检测默认开启
@@ -353,6 +356,13 @@ class AdvancedConfig:
         """保存浏览器排序偏好。"""
         if value in ("filename", "sharpness_desc", "aesthetic_desc"):
             self.config["browser_sort"] = value
+
+    @property
+    def delete_confirm(self) -> bool:
+        return self.config.get("delete_confirm", True)
+
+    def set_delete_confirm(self, value: bool):
+        self.config["delete_confirm"] = bool(value)
 
     # 主界面复选框状态 getter/setter
     @property

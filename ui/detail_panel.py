@@ -310,6 +310,9 @@ class DetailPanel(QWidget):
         self._val_confidence = _make_value_label()
         self._val_filename = _make_value_label()
         self._val_datetime = _make_value_label()
+        self._val_caption = _make_value_label()
+        self._val_caption.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px; font-family: {FONTS['mono']}; background: transparent;")
+        self._val_caption.setWordWrap(True)
 
         rows = [
             ("browser.meta_focus",      self._val_focus),
@@ -318,6 +321,7 @@ class DetailPanel(QWidget):
             ("browser.meta_aesthetic",  self._val_aesthetic),
             ("browser.meta_flying",     self._val_flying),
             ("browser.meta_species",    self._val_species),
+            ("browser.meta_caption",    self._val_caption),
             ("browser.meta_camera",     self._val_camera),
             ("browser.meta_lens",       self._val_lens),
             ("browser.meta_shutter",    self._val_shutter),
@@ -376,6 +380,7 @@ class DetailPanel(QWidget):
         for val in (
             self._val_focus, self._val_exposure, self._val_sharpness,
             self._val_aesthetic, self._val_flying, self._val_species,
+            self._val_caption,
             self._val_camera, self._val_lens, self._val_shutter,
             self._val_iso, self._val_focal, self._val_confidence,
             self._val_filename, self._val_datetime,
@@ -667,3 +672,8 @@ class DetailPanel(QWidget):
         if len(dt) > 19:
             dt = dt[:19]
         self._val_datetime.setText(dt)
+
+        # 选片备注（EXIF caption）
+        cap = p.get("caption") or _unknown
+        self._val_caption.setText(cap)
+        self._val_caption.setToolTip(cap)

@@ -406,6 +406,7 @@ class ThumbnailGrid(QScrollArea):
         self._multi_selected: set = set()       # filename 集合
         self._last_clicked_idx: int = -1        # Shift 范围选起点
         self._anchor_photo: Optional[dict] = None  # 单选锚点（对比视图左侧）
+        self._pending_photos: Optional[list] = None  # 延迟构建用
 
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -431,21 +432,38 @@ class ThumbnailGrid(QScrollArea):
         """)
         self._grid.addWidget(self._empty_label, 0, 0, 1, 1)
 
+        # 加载中提示（缩略图建网格前短暂显示）
+        self._loading_label = QLabel(self.i18n.t("browser.loading"))
+        self._loading_label.setAlignment(Qt.AlignCenter)
+        self._loading_label.setStyleSheet(f"""
+            QLabel {{
+                color: {COLORS['text_muted']};
+                font-size: 14px;
+                background: transparent;
+            }}
+        """)
+        self._loading_label.hide()
+
+        # 延迟构建定时器（等布局稳定后再计算列数）
+        self._build_timer = QTimer(self)
+        self._build_timer.setSingleShot(True)
+        self._build_timer.setInterval(50)
+        self._build_timer.timeout.connect(self._deferred_build)
+
     # ------------------------------------------------------------------
     #  公共接口
     # ------------------------------------------------------------------
 
     def load_photos(self, photos: list):
-        """加载照片列表并重建网格。"""
+        """加载照片列表并重建网格。延迟 50ms 构建以等布局稳定，避免列数跳变。"""
         # 取消上一个加载任务
         if self._loader and self._loader.isRunning():
             self._loader.cancel()
             self._loader.wait(500)
 
-        # 清空缩略图缓存，确保新路径（yolo_debug > crop_debug > temp_jpeg）优先级生效
+        # 清空缩略图缓存
         _thumb_cache.clear()
 
-        self._photos = photos
         self._cards.clear()
         self._selected_filename = ""
         self._multi_selected.clear()
@@ -459,6 +477,7 @@ class ThumbnailGrid(QScrollArea):
                 item.widget().deleteLater()
 
         if not photos:
+            self._photos = []
             self._empty_label = QLabel(self.i18n.t("browser.no_results"))
             self._empty_label.setAlignment(Qt.AlignCenter)
             self._empty_label.setStyleSheet(
@@ -467,10 +486,32 @@ class ThumbnailGrid(QScrollArea):
             self._grid.addWidget(self._empty_label, 0, 0, 1, 1)
             return
 
-        # 动态计算列数
+        # 显示加载提示 + 延迟构建（等布局稳定后用正确宽度计算列数）
+        self._loading_label.show()
+        self._grid.addWidget(self._loading_label, 0, 0, 1, 1)
+        self._pending_photos = photos
+        self._build_timer.start()
+
+    def _deferred_build(self):
+        """延迟构建网格（布局稳定后执行，列数计算精准）。"""
+        photos = self._pending_photos
+        if photos is None:
+            return
+        self._pending_photos = None
+        self._photos = photos
+
+        # 移除 loading label
+        self._loading_label.hide()
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            w = item.widget()
+            if w and w is not self._loading_label:
+                w.deleteLater()
+
+        # 动态计算列数（此时布局已稳定）
         col_count = max(1, (self.width() - 32) // (self._thumb_size + 8))
 
-        # 创建所有卡片（先占位）
+        # 创建所有卡片
         for idx, photo in enumerate(photos):
             row, col = divmod(idx, col_count)
             card = ThumbnailCard(photo, self._thumb_size)
@@ -519,6 +560,17 @@ class ThumbnailGrid(QScrollArea):
         if card:
             card.photo["rating"] = new_rating
             card._draw_overlays()
+
+    def remove_photo(self, filename: str):
+        """从网格中移除指定缩略图卡片（不重新加载全部数据）。"""
+        card = self._cards.pop(filename, None)
+        if card:
+            self._grid.removeWidget(card)
+            card.deleteLater()
+        self._photos = [p for p in self._photos if p.get("filename", "") != filename]
+        self._multi_selected.discard(filename)
+        if self._selected_filename == filename:
+            self._selected_filename = ""
 
     def select_photo(self, filename: str):
         """高亮选中指定文件名的卡片。"""
@@ -645,5 +697,7 @@ class ThumbnailGrid(QScrollArea):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # 窗口改变大小时延迟重排网格
-        QTimer.singleShot(100, lambda: self.load_photos(self._photos))
+        # 窗口改变大小时延迟重排网格（复用 _build_timer 防抖）
+        if self._photos and not self._pending_photos:
+            self._pending_photos = self._photos
+            self._build_timer.start()

@@ -13,7 +13,7 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, QThread, Slot
+from PySide6.QtCore import Qt, Signal, QThread, QTimer, Slot, QEvent
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush
 
 from ui.styles import COLORS, FONTS
@@ -156,7 +156,8 @@ class _FullscreenImageLabel(QLabel):
     - 单击（适配模式）→ 以鼠标位置为中心缩放到 100%
     - 单击（缩放模式）→ 返回适配模式
     - 拖拽（缩放模式）→ 平移图片
-    - 滚轮（任意模式）→ 以鼠标为中心缩放 0.1x~8x
+    - 滚轮（任意模式）→ 以鼠标为中心缩放 10%~500%
+    - 触控板双指捐合 → 缩放（macOS NativeGesture）
     - toggle_focus()  → 切换焦点叠加显示/隐藏
     """
 
@@ -173,6 +174,13 @@ class _FullscreenImageLabel(QLabel):
         self._draw_ox: float = 0.0       # 图片左上角 x（label 坐标）
         self._draw_oy: float = 0.0       # 图片左上角 y（label 坐标）
         self._display_scale: float = 1.0
+
+        # 丝滑缩放：目标值 + 动画插值
+        self._target_scale: float = 1.0
+        self._target_ox: float = 0.0
+        self._target_oy: float = 0.0
+        self._last_wheel_mx: float = -1.0  # 上次滚轮的鼠标 x（zoom hint 跟踪用）
+        self._last_wheel_my: float = -1.0
 
         # 拖拽状态
         self._drag_active: bool = False
@@ -194,6 +202,32 @@ class _FullscreenImageLabel(QLabel):
         self.setStyleSheet(f"background-color: {COLORS['bg_void']};")
         self.setCursor(Qt.CrossCursor)
 
+        # 功能3：缩放比例提示标签（悬浮胶囊，1.5s 后自动隐藏）
+        self._zoom_hint = QLabel(self)
+        self._zoom_hint.setAlignment(Qt.AlignCenter)
+        self._zoom_hint.setStyleSheet("""
+            QLabel {
+                background-color: rgba(30, 30, 30, 200);
+                color: #ffffff;
+                font-size: 13px;
+                font-weight: 600;
+                border-radius: 14px;
+                padding: 4px 14px;
+            }
+        """)
+        self._zoom_hint.setFixedSize(76, 28)
+        self._zoom_hint.hide()
+
+        self._zoom_hint_timer = QTimer(self)
+        self._zoom_hint_timer.setSingleShot(True)
+        self._zoom_hint_timer.setInterval(1500)
+        self._zoom_hint_timer.timeout.connect(self._zoom_hint.hide)
+
+        # 丝滑缩放动画定时器（~60fps）
+        self._zoom_anim_timer = QTimer(self)
+        self._zoom_anim_timer.setInterval(16)
+        self._zoom_anim_timer.timeout.connect(self._zoom_anim_step)
+
     # ── 公共接口 ────────────────────────────────────────────
 
     def set_pixmap(self, pixmap: QPixmap):
@@ -201,8 +235,45 @@ class _FullscreenImageLabel(QLabel):
         self._pixmap = pixmap
         self._fit_mode = True
         self._drag_active = False
+        self._zoom_anim_timer.stop()  # 停止上一张图的动画
         self.setCursor(Qt.CrossCursor)
         self.update()
+
+    def set_zoom_at(self, scale: float, mx: float, my: float):
+        """以屏幕坐标 (mx, my) 为中心，设置指定缩放比例（带动画过渡）。"""
+        if self._pixmap is None or self._pixmap.isNull():
+            return
+        self._ensure_manual_state()
+        img_px = (mx - self._draw_ox) / max(self._display_scale, 1e-10)
+        img_py = (my - self._draw_oy) / max(self._display_scale, 1e-10)
+        self._target_scale = max(0.1, min(2.0, scale))
+        self._target_ox = mx - img_px * self._target_scale
+        self._target_oy = my - img_py * self._target_scale
+        self._fit_mode = False
+        self.setCursor(Qt.OpenHandCursor)
+        self._last_wheel_mx = mx
+        self._last_wheel_my = my
+        if not self._zoom_anim_timer.isActive():
+            self._zoom_anim_timer.start()
+        self._show_zoom_hint(self._target_scale, mx, my)
+
+    def restore_zoom(self, scale: float, ox: float, oy: float):
+        """功能2：直接还原缩放比例和平移位置，不重新以鼠标点计算。
+        用于锁定缩放换图后精确恢复画面状态。
+        """
+        if self._pixmap is None or self._pixmap.isNull():
+            return
+        self._zoom_anim_timer.stop()  # 停止动画，瞬间恢复
+        self._display_scale = scale
+        self._draw_ox = ox
+        self._draw_oy = oy
+        self._target_scale = scale     # 同步 target 防止残留动画
+        self._target_ox = ox
+        self._target_oy = oy
+        self._fit_mode = False
+        self.setCursor(Qt.OpenHandCursor)
+        self.update()
+        self._show_zoom_hint(scale)
 
     def set_focus(self, focus_x: Optional[float], focus_y: Optional[float],
                   focus_status: Optional[str]):
@@ -384,15 +455,12 @@ class _FullscreenImageLabel(QLabel):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        # 绘制缩放后的图片
-        target_w = max(1, int(img_w * scale))
-        target_h = max(1, int(img_h * scale))
-        scaled_px = self._pixmap.scaled(
-            target_w, target_h,
-            Qt.IgnoreAspectRatio,
-            Qt.SmoothTransformation
-        )
-        painter.drawPixmap(int(ox), int(oy), scaled_px)
+        # 方案C：用 painter transform 绘制，让 Qt/GPU 做缩放
+        painter.save()
+        painter.translate(ox, oy)
+        painter.scale(scale, scale)
+        painter.drawPixmap(0, 0, self._pixmap)
+        painter.restore()
 
         # 焦点叠加（仅在可见且坐标/状态有效时绘制）
         if (self._focus_visible
@@ -409,6 +477,13 @@ class _FullscreenImageLabel(QLabel):
         super().resizeEvent(event)
         # 适配模式下窗口 resize → 重绘（paintEvent 自动重算）
         self.update()
+        # 功能3：重新定位缩放提示标签
+        if not self._zoom_hint.isHidden():
+            hw = self._zoom_hint.width()
+            hh = self._zoom_hint.height()
+            x = (self.width() - hw) // 2
+            y = self.height() - hh - 20
+            self._zoom_hint.move(x, max(0, y))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -479,24 +554,123 @@ class _FullscreenImageLabel(QLabel):
 
         pos = event.position()
         mx, my = pos.x(), pos.y()
+        self._last_wheel_mx = mx
+        self._last_wheel_my = my
 
-        # 鼠标下方的图片像素坐标
-        img_px = (mx - self._draw_ox) / self._display_scale
-        img_py = (my - self._draw_oy) / self._display_scale
+        # 方案B：区分触控板 vs 鼠标滚轮
+        pixel_delta = event.pixelDelta().y()
+        angle_delta = event.angleDelta().y()
+        if pixel_delta != 0:
+            # 触控板：按像素距离做连续缩放（跟手感）
+            factor = 1.0 + pixel_delta * 0.002
+        elif angle_delta != 0:
+            # 鼠标滚轮：6% 步进（比原来 15% 更细腻）
+            factor = 1.06 if angle_delta > 0 else 1.0 / 1.06
+        else:
+            return
 
-        # 计算新缩放
-        delta = event.angleDelta().y()
-        factor = 1.15 if delta > 0 else 1.0 / 1.15
-        new_scale = max(0.1, min(8.0, self._display_scale * factor))
+        # 使用当前目标值（而非实际值）计算，支持快速连续滚轮累积
+        base_scale = self._target_scale if self._zoom_anim_timer.isActive() else self._display_scale
+        base_ox = self._target_ox if self._zoom_anim_timer.isActive() else self._draw_ox
+        base_oy = self._target_oy if self._zoom_anim_timer.isActive() else self._draw_oy
 
-        # 重新定位使鼠标下方图片像素不变
-        self._draw_ox = mx - img_px * new_scale
-        self._draw_oy = my - img_py * new_scale
-        self._display_scale = new_scale
+        # 鼠标下方的图片像素坐标（基于目标值）
+        img_px = (mx - base_ox) / max(base_scale, 1e-10)
+        img_py = (my - base_oy) / max(base_scale, 1e-10)
+
+        new_scale = max(0.1, min(2.0, base_scale * factor))
+
+        # 方案A：设置目标值，启动动画插值
+        self._target_scale = new_scale
+        self._target_ox = mx - img_px * new_scale
+        self._target_oy = my - img_py * new_scale
         self._fit_mode = False
         self.setCursor(Qt.OpenHandCursor)
+        if not self._zoom_anim_timer.isActive():
+            self._zoom_anim_timer.start()
+        # 功能3：显示缩放比例提示（跟随鼠标，显示目标值）
+        self._show_zoom_hint(new_scale, mx, my)
+
+    def event(self, ev):
+        """拦截 macOS 触控板双指捐合缩放（QNativeGestureEvent）。"""
+        if ev.type() == QEvent.NativeGesture:
+            try:
+                from PySide6.QtCore import Qt as _Qt
+                # ZoomNativeGesture = 4
+                if ev.gestureType() == _Qt.ZoomNativeGesture:
+                    if self._pixmap is None or self._pixmap.isNull():
+                        return True
+                    self._ensure_manual_state()
+                    pos = ev.position()
+                    mx, my = pos.x(), pos.y()
+                    self._last_wheel_mx = mx
+                    self._last_wheel_my = my
+                    # ev.value() 是增量缩放因子，如 0.02 = 放大 2%
+                    factor = 1.0 + ev.value()
+                    base_scale = self._target_scale if self._zoom_anim_timer.isActive() else self._display_scale
+                    base_ox = self._target_ox if self._zoom_anim_timer.isActive() else self._draw_ox
+                    base_oy = self._target_oy if self._zoom_anim_timer.isActive() else self._draw_oy
+                    img_px = (mx - base_ox) / max(base_scale, 1e-10)
+                    img_py = (my - base_oy) / max(base_scale, 1e-10)
+                    new_scale = max(0.1, min(2.0, base_scale * factor))
+                    self._target_scale = new_scale
+                    self._target_ox = mx - img_px * new_scale
+                    self._target_oy = my - img_py * new_scale
+                    self._fit_mode = False
+                    self.setCursor(Qt.OpenHandCursor)
+                    if not self._zoom_anim_timer.isActive():
+                        self._zoom_anim_timer.start()
+                    self._show_zoom_hint(new_scale, mx, my)
+                    return True
+            except Exception:
+                pass
+        return super().event(ev)
+
+    def _show_zoom_hint(self, scale: float, mx: float = -1.0, my: float = -1.0):
+        """功能3：显示缩放比例悬浮提示，1.5s 后自动隐藏。
+        mx/my 为鼠标在 label 坐标系中的位置；不传则底部居中。
+        """
+        pct = int(round(scale * 100))
+        self._zoom_hint.setText(f"{pct}%")
+        hw = self._zoom_hint.width()   # 已 setFixedSize，尺寸稳定
+        hh = self._zoom_hint.height()
+        if mx >= 0 and my >= 0:
+            # 跟随鼠标：偏右下 16px，超出边界时翻转到鼠标左上方
+            x = mx + 16
+            y = my + 16
+            if x + hw > self.width():
+                x = mx - hw - 16
+            if y + hh > self.height():
+                y = my - hh - 16
+        else:
+            # 无鼠标坐标（如锁定缩放换图）：底部居中
+            x = (self.width() - hw) // 2
+            y = self.height() - hh - 20
+        self._zoom_hint.move(int(x), int(max(0, y)))
+        self._zoom_hint.show()
+        self._zoom_hint.raise_()
+        self._zoom_hint_timer.start()
+
+    def _zoom_anim_step(self):
+        """方案A：每帧将 scale/ox/oy 向目标值做 ease-out 插值。"""
+        t = 0.25  # 插值系数：每帧走完剩余距离的 25%，~100ms 完成 95%
+        self._display_scale += (self._target_scale - self._display_scale) * t
+        self._draw_ox += (self._target_ox - self._draw_ox) * t
+        self._draw_oy += (self._target_oy - self._draw_oy) * t
+
+        # 接近目标时停止（精度 0.001 即 0.1%）
+        if (abs(self._display_scale - self._target_scale) < 0.001
+                and abs(self._draw_ox - self._target_ox) < 0.5
+                and abs(self._draw_oy - self._target_oy) < 0.5):
+            self._display_scale = self._target_scale
+            self._draw_ox = self._target_ox
+            self._draw_oy = self._target_oy
+            self._zoom_anim_timer.stop()
+
         self.update()
         self._emit_transform_sync()
+        # 动画过程中持续更新 zoom hint 百分比
+        self._show_zoom_hint(self._display_scale, self._last_wheel_mx, self._last_wheel_my)
 
 
 # ============================================================
@@ -515,6 +689,7 @@ class FullscreenViewer(QWidget):
     close_requested = Signal()
     prev_requested = Signal()
     next_requested = Signal()
+    delete_requested = Signal(dict)   # 功能1：携带当前 photo dict
 
     def __init__(self, i18n, parent=None):
         super().__init__(parent)
@@ -522,6 +697,13 @@ class FullscreenViewer(QWidget):
         self._loader: Optional[_ImageLoader] = None
         self._preload_worker = _PreloadWorker(self)   # 预加载工作线程
         self._photos: list = []                        # 当前完整照片列表
+        self._current_photo: dict = {}                 # 当前显示的 photo dict
+
+        # 功能2：锁定缩放状态（同时锁定平移位置）
+        self._zoom_locked: bool = False
+        self._locked_scale: float = 1.0
+        self._locked_ox: float = 0.0   # 锁定时的图片左上角 x 偏移
+        self._locked_oy: float = 0.0   # 锁定时的图片左上角 y 偏移
 
         self.setStyleSheet(f"background-color: {COLORS['bg_void']};")
         self.setFocusPolicy(Qt.StrongFocus)            # 允许接收键盘事件
@@ -579,6 +761,14 @@ class FullscreenViewer(QWidget):
         # 初始状态：焦点关闭 → inactive 样式
         self._update_focus_btn_style(False)
 
+        # 功能2：锁定缩放按钮
+        self._lock_zoom_btn = QPushButton("🔓 锁定缩放")
+        self._lock_zoom_btn.setFixedHeight(36)
+        self._lock_zoom_btn.setToolTip("开启后翻页时保持当前缩放比例，并以鼠标位置为中心")
+        self._lock_zoom_btn.clicked.connect(self._toggle_zoom_lock)
+        self._update_lock_zoom_btn_style(False)
+        h.addWidget(self._lock_zoom_btn)
+
         h.addStretch()
 
         # 文件名标签
@@ -606,6 +796,22 @@ class FullscreenViewer(QWidget):
         """)
         self._rating_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         h.addWidget(self._rating_label)
+
+        # 功能1：删除按钮（红色危险样式）
+        self._delete_btn = QPushButton("🗑 删除")
+        self._delete_btn.setFixedHeight(36)
+        self._delete_btn.setToolTip("删除当前图片（移入回收站）")
+        self._delete_btn.setStyleSheet(
+            f"QPushButton {{ background-color: #3a1a1a;"
+            f" border: 1px solid #cc3333;"
+            f" border-radius: 6px;"
+            f" color: #ff6666;"
+            f" font-size: 12px;"
+            f" padding: 2px 12px; }}"
+            f"QPushButton:hover {{ background-color: #cc3333; color: #ffffff; }}"
+        )
+        self._delete_btn.clicked.connect(self._on_delete_clicked)
+        h.addWidget(self._delete_btn)
 
         return bar
 
@@ -663,6 +869,47 @@ class FullscreenViewer(QWidget):
     def _on_focus_btn_clicked(self):
         self.toggle_focus()
 
+    # 功能2：锁定缩放
+    def _toggle_zoom_lock(self):
+        """切换锁定缩放开/关。"""
+        self._zoom_locked = not self._zoom_locked
+        self._update_lock_zoom_btn_style(self._zoom_locked)
+        if self._zoom_locked:
+            # 记录当前缩放比例和平移位置
+            lbl = self._img_label
+            lbl._ensure_manual_state()   # 若在 fit_mode 先同步状态
+            self._locked_scale = lbl._display_scale
+            self._locked_ox = lbl._draw_ox
+            self._locked_oy = lbl._draw_oy
+
+    def _update_lock_zoom_btn_style(self, locked: bool):
+        if locked:
+            self._lock_zoom_btn.setText("🔒 锁定缩放")
+            self._lock_zoom_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {COLORS['bg_input']};"
+                f" border: 1px solid {COLORS['accent']};"
+                f" border-radius: 6px;"
+                f" color: {COLORS['accent']};"
+                f" font-size: 12px;"
+                f" padding: 2px 10px; }}"
+            )
+        else:
+            self._lock_zoom_btn.setText("🔓 锁定缩放")
+            self._lock_zoom_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {COLORS['bg_card']};"
+                f" border: 1px solid {COLORS['border']};"
+                f" border-radius: 6px;"
+                f" color: {COLORS['text_secondary']};"
+                f" font-size: 12px;"
+                f" padding: 2px 10px; }}"
+            )
+
+    # 功能1：删除按钮点击
+    def _on_delete_clicked(self):
+        """发出删除信号（携带当前 photo dict），由 ResultsBrowserWindow 处理。"""
+        if self._current_photo:
+            self.delete_requested.emit(self._current_photo)
+
     def _update_focus_btn_style(self, visible: bool):
         """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
         if visible:
@@ -705,6 +952,16 @@ class FullscreenViewer(QWidget):
         5. 未命中则启动 _ImageLoader 异步加载
         6. 触发 ±10 张预加载
         """
+        self._current_photo = photo  # 功能1：保存当前 photo 供删除按钮使用
+
+        # 功能2：锁定缩放 — 换图前保存当前 scale + ox/oy，换图后直接还原
+        if self._zoom_locked:
+            lbl = self._img_label
+            lbl._ensure_manual_state()   # fit_mode 下先同步状态
+            self._locked_scale = lbl._display_scale
+            self._locked_ox = lbl._draw_ox
+            self._locked_oy = lbl._draw_oy
+
         filename = photo.get("filename", "")
         self._filename_label.setText(filename)
 
@@ -718,6 +975,13 @@ class FullscreenViewer(QWidget):
             cached = _thumb_cache.get(filename)
             if cached and not cached.isNull():
                 self._img_label.set_pixmap(cached)
+                # 功能2：缩略图加载后直接还原锁定的缩放和位置
+                if self._zoom_locked:
+                    self._img_label.restore_zoom(
+                        self._locked_scale,
+                        self._locked_ox,
+                        self._locked_oy
+                    )
         except Exception:
             pass
 
@@ -744,7 +1008,15 @@ class FullscreenViewer(QWidget):
         if hd_path:
             cached_img = _hd_cache.get(hd_path)
             if cached_img and not cached_img.isNull():
-                self._img_label.set_pixmap(QPixmap.fromImage(cached_img))
+                px = QPixmap.fromImage(cached_img)
+                self._img_label.set_pixmap(px)
+                # 功能2：高清图加载后直接还原锁定的缩放和位置
+                if self._zoom_locked:
+                    self._img_label.restore_zoom(
+                        self._locked_scale,
+                        self._locked_ox,
+                        self._locked_oy
+                    )
             else:
                 # 5. 后台加载，完成后存入高清缓存
                 self._loader = _ImageLoader(hd_path, self)
@@ -787,6 +1059,13 @@ class FullscreenViewer(QWidget):
                 # QPixmap.toImage() 在主线程执行，线程安全
                 _hd_cache.put(path, pixmap.toImage())
             self._img_label.set_pixmap(pixmap)
+            # 功能2：后台高清图加载完成后也还原锁定的缩放和位置
+            if self._zoom_locked:
+                self._img_label.restore_zoom(
+                    self._locked_scale,
+                    self._locked_ox,
+                    self._locked_oy
+                )
 
     def _trigger_preload(self, current_photo: dict):
         """
@@ -837,5 +1116,8 @@ class FullscreenViewer(QWidget):
             self._img_label.toggle_zoom()
         elif key == _Qt.Key_Escape:
             self.close_requested.emit()
+        elif key in (_Qt.Key_Delete, _Qt.Key_X):
+            if self._current_photo:
+                self.delete_requested.emit(self._current_photo)
         else:
             super().keyPressEvent(event)

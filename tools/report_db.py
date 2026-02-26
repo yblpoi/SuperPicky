@@ -475,20 +475,31 @@ class ReportDB:
         where_clauses = []
         params: List[Any] = []
 
+        # 永远排除无鸟记录（rating=-1），即使前端意外传入也过滤掉
+        where_clauses.append("rating != -1")
+
         ratings = filters.get("ratings")
         if isinstance(ratings, list):
+            # 过滤掉 -1（以防万一）
+            ratings = [r for r in ratings if r != -1]
             if not ratings:
                 return []
             placeholders = ", ".join(["?"] * len(ratings))
             where_clauses.append(f"rating IN ({placeholders})")
             params.extend(ratings)
 
+        # 是否包含低评分（0 星），这类照片 focus_status/is_flying 可能是 NULL
+        has_low_rating = isinstance(ratings, list) and any(r <= 0 for r in ratings)
+
         focus_statuses = filters.get("focus_statuses")
         if isinstance(focus_statuses, list):
             if not focus_statuses:
                 return []
             placeholders = ", ".join(["?"] * len(focus_statuses))
-            where_clauses.append(f"focus_status IN ({placeholders})")
+            condition = f"focus_status IN ({placeholders})"
+            if has_low_rating:
+                condition = f"({condition} OR focus_status IS NULL)"
+            where_clauses.append(condition)
             params.extend(focus_statuses)
 
         is_flying = filters.get("is_flying")
@@ -496,7 +507,10 @@ class ReportDB:
             if not is_flying:
                 return []
             placeholders = ", ".join(["?"] * len(is_flying))
-            where_clauses.append(f"is_flying IN ({placeholders})")
+            condition = f"is_flying IN ({placeholders})"
+            if has_low_rating:
+                condition = f"({condition} OR is_flying IS NULL)"
+            where_clauses.append(condition)
             params.extend(is_flying)
 
         species_col = None
@@ -612,6 +626,21 @@ class ReportDB:
 
         with self._lock:
             cursor = self._conn.execute(sql, values)
+            self._safe_commit()
+            return cursor.rowcount > 0
+
+    def delete_photo(self, filename: str) -> bool:
+        """从 photos 表中删除指定文件名的记录。
+
+        Args:
+            filename: 照片文件名
+
+        Returns:
+            是否成功删除
+        """
+        sql = "DELETE FROM photos WHERE filename = ?"
+        with self._lock:
+            cursor = self._conn.execute(sql, [filename])
             self._safe_commit()
             return cursor.rowcount > 0
 
