@@ -319,21 +319,25 @@ class FocusPointDetector:
         orientation = exif_data.get('Orientation', 1)
         norm_x, norm_y = self._apply_orientation_correction(norm_x, norm_y, orientation)
         
-        # 获取对焦框大小
+        # 获取对焦框大小 + 合焦标志
+        # FocusFrameSize 格式（-n 模式）: "width height validity_flag"
+        # 第 3 个值：0 = 焦框无效 (n/a)，非 0 = 焦框有效 → 用作合焦标志
         frame_size = exif_data.get('FocusFrameSize', '')
         area_w, area_h = 0, 0
+        focus_result = 1  # 默认合焦（无法获取标志时保守假设）
         if frame_size:
             try:
                 fs_parts = str(frame_size).split()
                 if len(fs_parts) >= 2:
                     area_w = int(fs_parts[0])
                     area_h = int(fs_parts[1])
+                if len(fs_parts) >= 3:
+                    focus_result = 1 if int(fs_parts[2]) != 0 else 0
             except (ValueError, IndexError):
                 pass
-        
-        # Sony 没有 FocusResult 标签，假设 AF 模式下都是合焦的
+
         area_mode = str(exif_data.get('AFAreaMode', 'Unknown'))
-        
+
         return FocusPointResult(
             x=norm_x,
             y=norm_y,
@@ -343,7 +347,7 @@ class FocusPointDetector:
             area_height=area_h,
             af_mode=focus_mode,
             area_mode=area_mode,
-            focus_result=1,  # 假设 AF 模式下合焦
+            focus_result=focus_result,
             is_valid=True
         )
     
