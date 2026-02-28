@@ -1222,7 +1222,7 @@ class SuperPickyMainWindow(QMainWindow):
         self.view_results_btn = QPushButton(self.i18n.t("labels.view_results_arrow"))
         self.view_results_btn.setMinimumWidth(160)
         self.view_results_btn.setMinimumHeight(40)
-        self.view_results_btn.clicked.connect(self._auto_open_results)
+        self.view_results_btn.clicked.connect(self._open_results_smart)
         self.view_results_btn.setVisible(False)
         btn_layout.addWidget(self.view_results_btn)
 
@@ -1322,6 +1322,15 @@ class SuperPickyMainWindow(QMainWindow):
         except Exception:
             return {}
 
+    def _open_results_smart(self):
+        """根据「保留预览图片」设置决定打开浏览器还是 Finder。"""
+        from advanced_config import get_advanced_config
+        adv_config = get_advanced_config()
+        if adv_config.keep_temp_files:
+            self._auto_open_results()
+        else:
+            self._open_finder_results()
+
     def _auto_open_results(self):
         """打开/切换结果浏览器窗口，并隐藏主窗口。"""
         if not self.directory_path:
@@ -1337,6 +1346,21 @@ class SuperPickyMainWindow(QMainWindow):
         self._results_browser.activateWindow()
         # 浏览器打开后隐藏主窗口（托盘图标保持可用）
         self.hide()
+
+    def _open_finder_results(self):
+        """不保留预览图时，直接在 Finder 打开结果目录。"""
+        if not self.directory_path:
+            return
+        import sys
+        try:
+            if sys.platform == 'darwin':
+                subprocess.Popen(['open', self.directory_path])
+            elif sys.platform == 'win32':
+                subprocess.Popen(['explorer', self.directory_path])
+            else:
+                subprocess.Popen(['xdg-open', self.directory_path])
+        except Exception as e:
+            self._log(f"  ⚠️ 打开目录失败: {e}", "warning")
 
     def _update_status_banner(self, state: str, data=None):
         """更新状态条显示。
@@ -1670,8 +1694,8 @@ class SuperPickyMainWindow(QMainWindow):
         # 播放完成音效
         self._play_completion_sound()
 
-        # 800ms 后自动弹出结果浏览器
-        QTimer.singleShot(800, self._auto_open_results)
+        # 800ms 后根据「保留预览图片」设置决定行为
+        QTimer.singleShot(800, self._open_results_smart)
 
     @Slot(str)
     def _on_error(self, error_msg):

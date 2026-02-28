@@ -414,34 +414,7 @@ class AdvancedSettingsDialog(QDialog):
         """)
         preview_layout.addWidget(keep_preview_hint)
 
-        # 2. Combo: 自动清理周期
-        cleanup_container = QWidget()
-        cleanup_layout = QHBoxLayout(cleanup_container)
-        cleanup_layout.setContentsMargins(0, 4, 0, 0)
-        cleanup_layout.setSpacing(10)
-
-        cleanup_label = QLabel(self.i18n.t("advanced_settings.auto_cleanup"))
-        cleanup_label.setStyleSheet(f"""
-            color: {COLORS['text_primary']};
-            font-size: 13px;
-            margin-left: 24px;
-        """)
-        cleanup_layout.addWidget(cleanup_label)
-
-        cleanup_combo = QComboBox()
-        cleanup_combo.addItem(self.i18n.t("advanced_settings.cleanup_3_days"), 3)
-        cleanup_combo.addItem(self.i18n.t("advanced_settings.cleanup_7_days"), 7)
-        cleanup_combo.addItem(self.i18n.t("advanced_settings.cleanup_30_days"), 30)
-        cleanup_combo.addItem(self.i18n.t("advanced_settings.cleanup_forever"), 0)
-        
-        self.vars["auto_cleanup_days"] = cleanup_combo
-        cleanup_layout.addWidget(cleanup_combo)
-        cleanup_layout.addStretch()
-
-        preview_layout.addWidget(cleanup_container)
-        
-        # 联动逻辑：不保留预览图时，禁用清理周期设置
-        keep_preview_check.toggled.connect(cleanup_container.setEnabled)
+        # 说明：不保留预览图时，选鸟完成后自动打开 Finder 显示结果目录
 
         layout.addWidget(preview_group_widget)
 
@@ -582,13 +555,7 @@ class AdvancedSettingsDialog(QDialog):
         keep_temp = self.config.keep_temp_files
         self.vars["keep_temp_files"].setChecked(keep_temp)
         
-        cleanup_days = self.config.auto_cleanup_days
-        combo = self.vars["auto_cleanup_days"]
-        index = combo.findData(cleanup_days)
-        if index >= 0:
-            combo.setCurrentIndex(index)
-        else:
-            combo.setCurrentIndex(2) # Default to 30 days if not found
+
 
     @Slot()
     def _reset_to_default(self):
@@ -639,7 +606,6 @@ class AdvancedSettingsDialog(QDialog):
 
         # 保存预览图设置
         self.config.set_keep_temp_files(self.vars["keep_temp_files"].isChecked())
-        self.config.set_auto_cleanup_days(self.vars["auto_cleanup_days"].currentData())
 
         # 保存外部应用列表
         self.config.set_external_apps(self._apps_data)

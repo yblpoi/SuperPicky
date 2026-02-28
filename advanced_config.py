@@ -64,7 +64,6 @@ class AdvancedConfig:
         
         # 临时文件管理 V4.1
         "keep_temp_files": True,        # 保留临时预览图片（统一控制 tmp JPG + debug crops）
-        "auto_cleanup_days": 30,        # 自动清理周期：3/7/30/0(永久)
 
         # 鸟种英文名显示格式 V4.x (AviList mapping)
         #   "default"    = OSEA model original names
@@ -314,20 +313,8 @@ class AdvancedConfig:
     def keep_temp_files(self):
         return self.config.get("keep_temp_files", True)
 
-    @property
-    def auto_cleanup_days(self):
-        return self.config.get("auto_cleanup_days", 30)
-
     def set_keep_temp_files(self, value):
         self.config["keep_temp_files"] = bool(value)
-
-    def set_auto_cleanup_days(self, value):
-        """设置自动清理周期 (0=永久, 或天数)"""
-        try:
-            days = int(value)
-            self.config["auto_cleanup_days"] = max(0, days)
-        except ValueError:
-            pass
 
     # V4.x: 鸟种英文名显示格式
     @property
