@@ -1323,14 +1323,15 @@ class SuperPickyMainWindow(QMainWindow):
             return {}
 
     def _open_results_smart(self):
-        """根据「保留预览图片」设置决定行为：
-        True  → 打开结果浏览器
-        False → 什么都不做（主窗口保持可见，用户自行选择下一步）
+        """用户主动点击「查看结果」按鈕时的路由：
+        True  → 打开结果浏览器（有预览图）
+        False → 打开 Finder 显示分目录结果（无预览图）
         """
         from advanced_config import get_advanced_config
         if get_advanced_config().keep_temp_files:
             self._auto_open_results()
-        # else: 保持主窗口，不弹任何窗口
+        else:
+            self._open_finder_results()
 
     def _auto_open_results(self):
         """打开/切换结果浏览器窗口，并隐藏主窗口。"""
@@ -1698,8 +1699,11 @@ class SuperPickyMainWindow(QMainWindow):
         # 播放完成音效
         self._play_completion_sound()
 
-        # 800ms 后根据「保留预览图片」设置决定行为
-        QTimer.singleShot(800, self._open_results_smart)
+        # 800ms 后按设置决定行为：保留预览图才自动弹出浏览器
+        from advanced_config import get_advanced_config as _gc
+        if _gc().keep_temp_files:
+            QTimer.singleShot(800, self._auto_open_results)
+        # else: 不保留预览图时什么都不弹，主窗口保持可见
 
     @Slot(str)
     def _on_error(self, error_msg):
