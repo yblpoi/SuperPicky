@@ -23,8 +23,8 @@ from ui.styles import COLORS, FONTS
 _FOCUS_COLORS = {
     "BEST":  QColor(COLORS['focus_best']),   # 绿 — 精焦
     "GOOD":  QColor(COLORS['focus_good']),   # 琥珀 — 合焦
-    "BAD":   QColor("#ffcc00"),              # 黄 — 失焦（photo overlay 需高对比，保留）
-    # WORST 不入表 → 不绘制
+    "BAD":   QColor("#ffcc00"),              # 黄 — 失焦
+    "WORST": QColor("#999999"),              # 灰 — 焦点在鸟外
 }
 
 
@@ -170,7 +170,7 @@ class _FullscreenImageLabel(QLabel):
         self._focus_x: Optional[float] = None
         self._focus_y: Optional[float] = None
         self._focus_status: Optional[str] = None
-        self._focus_visible: bool = True
+        self._focus_visible: bool = False  # 初始关闭，与按钮 inactive 初始状态同步
 
         # 缩放/平移状态
         self._fit_mode: bool = True
