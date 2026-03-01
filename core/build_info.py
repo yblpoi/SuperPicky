@@ -5,5 +5,7 @@
 """
 
 # 在打包时会被替换为实际的 commit hash
-COMMIT_HASH = "f5859bd3"
+COMMIT_HASH = "498c496"
+
+
 

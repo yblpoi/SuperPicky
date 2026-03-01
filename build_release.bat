@@ -57,7 +57,26 @@ goto :parse_args_loop
 :start
 echo.
 echo [========================================]
-echo Step 0: Environment check
+echo Step 0: Clean old build files
+echo [========================================]
+
+rem Set Inno Setup directory
+set "INNO_DIR=%ROOT_DIR%\inno"
+
+rem Clean old build directories
+if exist "%ROOT_DIR%\build_dist" rd /s /q "%ROOT_DIR%\build_dist" >nul 2>&1
+if exist "%ROOT_DIR%\build_dist_cpu" rd /s /q "%ROOT_DIR%\build_dist_cpu" >nul 2>&1
+if exist "%ROOT_DIR%\build_dist_cuda" rd /s /q "%ROOT_DIR%\build_dist_cuda" >nul 2>&1
+if exist "%ROOT_DIR%\dist" rd /s /q "%ROOT_DIR%\dist" >nul 2>&1
+if exist "%ROOT_DIR%\dist_cpu" rd /s /q "%ROOT_DIR%\dist_cpu" >nul 2>&1
+if exist "%ROOT_DIR%\dist_cuda" rd /s /q "%ROOT_DIR%\dist_cuda" >nul 2>&1
+if exist "%ROOT_DIR%\output" rd /s /q "%ROOT_DIR%\output" >nul 2>&1
+
+echo [SUCCESS] Cleaned old build files
+
+echo.
+echo [========================================]
+echo Step 1: Environment check
 echo [========================================]
 
 if not exist "%SPEC_FILE%" (
@@ -256,6 +275,34 @@ if "%BUILD_ZIP%"=="1" (
         )
         call :copy_dir "%DIST_DIR%\%APP_NAME%" "!TARGET_DIR!"
         if errorlevel 1 exit /b 1
+        
+        rem Copy Inno Setup files to target directory
+        if exist "%INNO_DIR%\SuperPicky.iss" (
+            copy /y "%INNO_DIR%\SuperPicky.iss" "!TARGET_DIR!\SuperPicky.iss" >nul
+            if errorlevel 1 (
+                echo [ERROR] Failed to copy SuperPicky.iss to target directory
+                exit /b 1
+            )
+            echo [SUCCESS] Copied SuperPicky.iss to !TARGET_DIR!
+            
+            rem Update version in iss file
+            powershell -NoProfile -Command "(Get-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Raw -Encoding UTF8) -replace 'VersionInfoVersion=.*', 'VersionInfoVersion=!VERSION!' | Set-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Encoding UTF8"
+            if errorlevel 1 (
+                echo [ERROR] Failed to update version in SuperPicky.iss in target directory
+                exit /b 1
+            )
+            echo [SUCCESS] Updated version in SuperPicky.iss to !VERSION! in target directory
+        )
+        
+        if exist "%INNO_DIR%\ChineseSimplified.isl" (
+            copy /y "%INNO_DIR%\ChineseSimplified.isl" "!TARGET_DIR!\ChineseSimplified.isl" >nul
+            if errorlevel 1 (
+                echo [ERROR] Failed to copy ChineseSimplified.isl to target directory
+                exit /b 1
+            )
+            echo [SUCCESS] Copied ChineseSimplified.isl to !TARGET_DIR!
+        )
+        
         call :zip_dir "!TARGET_DIR!" "!ZIP_COPY_DIR!\!TARGET_SUBDIR!.zip"
         if errorlevel 1 exit /b 1
         echo [SUCCESS] Copied !TARGET_SUBDIR! + created !ZIP_COPY_DIR!\!TARGET_SUBDIR!.zip
@@ -267,14 +314,52 @@ if "%BUILD_ZIP%"=="1" (
 
 echo.
 echo [========================================]
+echo Step 4: Copy Inno Setup files
+echo [========================================]
+
+set "INNO_DIR=%ROOT_DIR%\inno"
+set "OUTPUT_EXE_DIR=%DIST_DIR%\%APP_NAME%"
+
+if exist "%INNO_DIR%\SuperPicky.iss" (
+    copy /y "%INNO_DIR%\SuperPicky.iss" "%OUTPUT_EXE_DIR%\SuperPicky.iss" >nul
+    if errorlevel 1 (
+        echo [ERROR] Failed to copy SuperPicky.iss
+        exit /b 1
+    )
+    echo [SUCCESS] Copied SuperPicky.iss to %OUTPUT_EXE_DIR%
+    
+    rem Update version in iss file
+    powershell -NoProfile -Command "(Get-Content -Path '%OUTPUT_EXE_DIR%\SuperPicky.iss' -Raw -Encoding UTF8) -replace 'VersionInfoVersion=.*', 'VersionInfoVersion=%VERSION%' | Set-Content -Path '%OUTPUT_EXE_DIR%\SuperPicky.iss' -Encoding UTF8"
+    if errorlevel 1 (
+        echo [ERROR] Failed to update version in SuperPicky.iss
+        exit /b 1
+    )
+    echo [SUCCESS] Updated version in SuperPicky.iss to %VERSION%
+) else (
+    echo [WARNING] SuperPicky.iss not found in %INNO_DIR%
+)
+
+if exist "%INNO_DIR%\ChineseSimplified.isl" (
+    copy /y "%INNO_DIR%\ChineseSimplified.isl" "%OUTPUT_EXE_DIR%\ChineseSimplified.isl" >nul
+    if errorlevel 1 (
+        echo [ERROR] Failed to copy ChineseSimplified.isl
+        exit /b 1
+    )
+    echo [SUCCESS] Copied ChineseSimplified.isl to %OUTPUT_EXE_DIR%
+) else (
+    echo [WARNING] ChineseSimplified.isl not found in %INNO_DIR%
+)
+
+echo.
+echo [========================================]
 echo Build finished
 echo [========================================]
 echo EXE: %DIST_DIR%\%APP_NAME%\SuperPicky.exe
 if defined ZIP_NAME (
-    echo ZIP: %DIST_DIR%\%ZIP_NAME%
-    if defined ZIP_COPY_DIR echo Copy: %ZIP_COPY_DIR%\%APP_NAME%_%VERSION% + .zip
+echo ZIP: %DIST_DIR%\%ZIP_NAME%
+if defined ZIP_COPY_DIR echo Copy: %ZIP_COPY_DIR%\%APP_NAME%_%VERSION% + .zip
 ) else (
-    echo ZIP: ^(skipped^)
+echo ZIP: ^(skipped^)
 )
 exit /b 0
 
