@@ -380,10 +380,16 @@ def load_image(image_path: str) -> Image.Image:
     raw_extensions = [
         '.cr2', '.cr3', '.nef', '.nrw', '.arw', '.srf', '.dng',
         '.raf', '.orf', '.rw2', '.pef', '.srw', '.raw', '.rwl',
-        '.3fr', '.fff', '.erf', '.mef', '.mos', '.mrw', '.x3f'
+        '.3fr', '.fff', '.erf', '.mef', '.mos', '.mrw', '.x3f',
+        '.hif', '.heif', '.heic',   # Sony HIF / HEIF
     ]
 
+    # HEIF 格式（rawpy 不支持）：直接补 pillow-heif 路径
+    heif_extensions = {'.hif', '.heif', '.heic'}
+
     if ext in raw_extensions:
+        if ext in heif_extensions:
+            return _load_heif(image_path)
         if RAW_SUPPORT:
             try:
                 with rawpy.imread(image_path) as raw:
@@ -465,11 +471,33 @@ def _load_raw_via_exiftool(image_path: str) -> "Image.Image":
             continue
 
     raise Exception(
-        f"暂不支持此 RAW 格式（{os.path.basename(image_path)}）。"
-        "Sony A7M5 等相机的 NeXt/Compressed RAW 2 格式目前第三方库尚未完整支持，"
-        "将在后续版本中修复。建议临时使用无压缩 RAW 或 JPEG 格式拍摄。"
+        f"\u6682\u4e0d\u652f\u6301\u6b64 RAW \u683c\u5f0f\uff08{os.path.basename(image_path)}\uff09\u3002"
+        "Sony A7M5 \u7b49\u76f8\u673a\u7684 NeXt/Compressed RAW 2 \u683c\u5f0f\u76ee\u524d\u7b2c\u4e09\u65b9\u5e93\u5c1a\u672a\u5b8c\u6574\u652f\u6301\uff0c"
+        "\u5c06\u5728\u540e\u7eed\u7248\u672c\u4e2d\u4fee\u590d\u3002\u5efa\u8bae\u4e34\u65f6\u4f7f\u7528\u65e0\u538b\u7f29 RAW \u6216 JPEG \u683c\u5f0f\u62cd\u6444\u3002"
     )
 
+
+def _load_heif(image_path: str) -> "Image.Image":
+    """
+    \u4f7f\u7528 pillow-heif \u89e3\u7801 HEIF/HIF \u6587\u4ef6\uff08Sony HIF \u3001\u82f9\u679c HEIC \u7b49\uff09\u4e3a PIL Image\u3002
+    """
+    try:
+        import pillow_heif
+        heif_file = pillow_heif.read_heif(image_path)
+        img = Image.frombytes(
+            heif_file.mode,
+            heif_file.size,
+            heif_file.data,
+            "raw",
+        ).convert("RGB")
+        print(f"[HEIF] pillow-heif \u89e3\u7801\u6210\u529f: {img.size[0]}x{img.size[1]}")
+        return img
+    except ImportError:
+        raise Exception(
+            "\u8bf7\u5b89\u88c5 pillow-heif \u6765\u652f\u6301 HIF/HEIC \u683c\u5f0f\uff1a pip install pillow-heif"
+        )
+    except Exception as e:
+        raise Exception(f"HEIF \u89e3\u7801\u5931\u8d25 ({os.path.basename(image_path)}): {e}")
 
 # ==================== GPS 提取 ====================
 

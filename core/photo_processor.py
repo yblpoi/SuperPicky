@@ -42,7 +42,7 @@ from core.flight_detector import FlightDetector, get_flight_detector, FlightResu
 from core.exposure_detector import ExposureDetector, get_exposure_detector, ExposureResult
 from core.focus_point_detector import get_focus_detector, verify_focus_in_bbox
 
-from constants import RATING_FOLDER_NAMES, RAW_EXTENSIONS, JPG_EXTENSIONS, get_rating_folder_name, get_rating_folder_names
+from constants import RATING_FOLDER_NAMES, RAW_EXTENSIONS, JPG_EXTENSIONS, HEIF_EXTENSIONS, get_rating_folder_name, get_rating_folder_names
 
 # 国际化
 from tools.i18n import get_i18n
@@ -548,6 +548,8 @@ class PhotoProcessor:
         
         raw_dict = {}
         jpg_dict = {}
+        heif_dict = {}               # HIF/HEIF 文件暂存
+        heif_processed_as_raw = set() # 被当作 RAW 处理的 HIF 前缀
         files_tbr = []
         
         for filename in os.listdir(self.dir_path):
@@ -565,10 +567,19 @@ class PhotoProcessor:
             file_prefix, file_ext = os.path.splitext(filename)
             if file_ext.lower() in RAW_EXTENSIONS:
                 raw_dict[file_prefix] = file_ext
+            elif file_ext.lower() in HEIF_EXTENSIONS:
+                # HEIF/HIF: 仅当同名前缀没有 RAW 时才加入（RAW 优先）
+                heif_dict[file_prefix] = file_ext
             if file_ext.lower() in JPG_EXTENSIONS:
                 jpg_dict[file_prefix] = file_ext
                 files_tbr.append(filename)
         
+        # 将 HIF 作为 RAW 处理（仅对同名前缀无 RAW 文件的）
+        for prefix, ext in heif_dict.items():
+            if prefix not in raw_dict:
+                raw_dict[prefix] = ext
+                heif_processed_as_raw.add(prefix)
+
         scan_time = (time.time() - scan_start) * 1000
         self._log(self.i18n.t("logs.scan_time", time=scan_time))
         
