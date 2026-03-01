@@ -24,8 +24,8 @@ def raw_to_jpeg(raw_file_path):
     # 文件名不带 tmp_ 前缀，直接使用原名前缀
     jpg_file_path = os.path.join(cache_dir, f"{file_prefix}.jpg")
     
-    if os.path.exists(jpg_file_path):
-        return jpg_file_path  # 返回完整路径（缓存命中，无需日志）
+    if os.path.exists(jpg_file_path) and os.path.getsize(jpg_file_path) >= 128 * 1024:
+        return jpg_file_path  # 返回完整路径（缓存命中且 ≥128KB，无需重新生成）
         
     if not os.path.exists(raw_file_path):
         log_message(f"ERROR, file [{filename}] cannot be found in RAW form", directory_path)

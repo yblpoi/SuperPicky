@@ -103,7 +103,8 @@ def cmd_burst(args):
                 continue
             
             # 重新获取该目录的 groups
-            extensions = {'.nef', '.rw2', '.arw', '.cr2', '.cr3', '.orf', '.dng'}
+            from constants import RAW_EXTENSIONS, HEIF_EXTENSIONS
+            extensions = set(RAW_EXTENSIONS + HEIF_EXTENSIONS)
             filepaths = []
             for entry in os.scandir(subdir):
                 if entry.is_file():
@@ -600,7 +601,8 @@ def _run_burst_detection_restar(directory: str):
         if not os.path.exists(subdir):
             continue
         
-        extensions = {'.nef', '.rw2', '.arw', '.cr2', '.cr3', '.orf', '.dng'}
+        from constants import RAW_EXTENSIONS, HEIF_EXTENSIONS
+        extensions = set(RAW_EXTENSIONS + HEIF_EXTENSIONS)
         filepaths = []
         for entry in os.scandir(subdir):
             if entry.is_file():

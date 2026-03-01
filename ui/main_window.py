@@ -1884,8 +1884,9 @@ class SuperPickyMainWindow(QMainWindow):
                             emit_log(i18n.t("logs.empty_dir_delete_failed", dir=rating_dir, error=e))
                 
                 # V4.0.5: 清理 .superpicky 隐藏目录和 manifest 文件
+                # Quick Restore: 重新处理时保留 .superpicky 缓存（预览图复用，节省时间）
                 superpicky_dir = os.path.join(directory_path, ".superpicky")
-                if os.path.exists(superpicky_dir):
+                if not _skip_exif_reset and os.path.exists(superpicky_dir):
                     try:
                         shutil.rmtree(superpicky_dir)
                         emit_log("  ✅ .superpicky/")
@@ -1899,6 +1900,8 @@ class SuperPickyMainWindow(QMainWindow):
                             deleted_dirs += 1
                         except Exception as e2:
                             emit_log(f"  ⚠️ .superpicky 删除失败: {e2}")
+                elif _skip_exif_reset:
+                    emit_log("  ✅ .superpicky/ 缓存已保留（快速复原：预览图复用）")
                 
                 manifest_file = os.path.join(directory_path, ".superpicky_manifest.json")
                 if os.path.exists(manifest_file):
