@@ -78,7 +78,8 @@ class FilterPanel(QWidget):
 
         # 当前激活的单选状态
         self._active_rating: str = _DEFAULT_RATING
-        self._active_focus: str = _DEFAULT_FOCUS
+        # 对焦多选状态（默认精焦+合焦）
+        self._focus_checks: dict = {}  # mode -> QCheckBox（在 _build_focus_buttons 里填充）
 
         from advanced_config import get_advanced_config
         self._adv_config = get_advanced_config()
@@ -152,9 +153,9 @@ class FilterPanel(QWidget):
 
         layout.addWidget(self._divider())
 
-        # --- 对焦状态（单选）---
+        # --- 对焦状态（多选 checkbox）---
         layout.addWidget(_section_label(self.i18n.t("browser.section_focus")))
-        layout.addWidget(self._build_focus_buttons())
+        layout.addWidget(self._build_focus_checkboxes())
 
         layout.addWidget(self._divider())
 
@@ -286,61 +287,48 @@ class FilterPanel(QWidget):
         self._emit_filters()
 
     # ------------------------------------------------------------------
-    #  对焦按钮（单选，横排）
+    #  对焦 checkbox（多选）
     # ------------------------------------------------------------------
 
-    def _build_focus_buttons(self) -> QWidget:
-        """3个对焦互斥单选按钮（精焦/合焦/失焦），横排。"""
+    def _build_focus_checkboxes(self) -> QWidget:
+        """3个对焦多选 checkbox（精焦/合焦/失焦），默认精焦+合焦。"""
         _is_zh = not getattr(self.i18n, 'current_lang', 'zh_CN').startswith('en')
 
         w = QWidget()
         w.setStyleSheet("background: transparent;")
         row = QHBoxLayout(w)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
+        row.setSpacing(8)
 
-        self._focus_btns: dict = {}  # mode -> QPushButton
+        # 默认勾选 BEST + GOOD
+        _defaults = {"BEST", "GOOD"}
 
         for mode, label_zh, statuses, color in _FOCUS_OPTIONS:
             label = label_zh if _is_zh else mode
-            btn = QPushButton(label)
-            btn.setFixedHeight(30)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            active = (mode == _DEFAULT_FOCUS)
-            btn.setStyleSheet(self._focus_btn_style(active, color))
-            _m, _c = mode, color
-            btn.clicked.connect(lambda _=None, m=_m, c=_c: self._on_focus_btn(m, c))
-            self._focus_btns[mode] = (btn, color)
-            row.addWidget(btn)
+            cb = QCheckBox(label)
+            cb.setChecked(mode in _defaults)
+            cb.setStyleSheet(f"""
+                QCheckBox {{
+                    color: {color};
+                    font-size: 12px;
+                    spacing: 4px;
+                }}
+                QCheckBox::indicator {{
+                    width: 14px; height: 14px;
+                    border-radius: 3px;
+                    border: 1px solid {COLORS['border']};
+                    background: transparent;
+                }}
+                QCheckBox::indicator:checked {{
+                    background-color: {color};
+                    border-color: {color};
+                }}
+            """)
+            cb.stateChanged.connect(self._emit_filters)
+            self._focus_checks[mode] = cb
+            row.addWidget(cb)
 
         return w
-
-    def _focus_btn_style(self, active: bool, color: str) -> str:
-        if active:
-            return (
-                f"QPushButton {{ background-color: {COLORS['bg_card']};"
-                f" border: 1px solid {color};"
-                f" border-radius: 6px;"
-                f" color: {color};"
-                f" font-size: 12px; padding: 3px 4px; }}"
-                f" QPushButton:hover {{ background-color: {COLORS['bg_input']}; }}"
-            )
-        else:
-            return (
-                f"QPushButton {{ background-color: transparent;"
-                f" border: 1px solid {COLORS['border']};"
-                f" border-radius: 6px;"
-                f" color: {COLORS['text_muted']};"
-                f" font-size: 12px; padding: 3px 4px; }}"
-                f" QPushButton:hover {{ background-color: {COLORS['bg_card']};"
-                f" border-color: {color}; color: {color}; }}"
-            )
-
-    def _on_focus_btn(self, mode: str, color: str):
-        self._active_focus = mode
-        for m, (btn, c) in self._focus_btns.items():
-            btn.setStyleSheet(self._focus_btn_style(m == mode, c))
-        self._emit_filters()
 
     # ------------------------------------------------------------------
     #  飞行 checkbox（多选）
@@ -433,13 +421,15 @@ class FilterPanel(QWidget):
         else:
             selected_ratings = [3]
 
-        # 对焦：当前激活的单选（可能包含多个 DB 值，如 BAD+WORST）
+        # 对焦：所有勾选的 checkbox 对应的 statuses 合并
+        selected_focus = []
         for mode, label_zh, statuses, color in _FOCUS_OPTIONS:
-            if mode == self._active_focus:
-                selected_focus = statuses
-                break
-        else:
-            selected_focus = ["BEST"]
+            cb = self._focus_checks.get(mode)
+            if cb and cb.isChecked():
+                selected_focus.extend(statuses)
+        if not selected_focus:
+            # 全取消时降级为全选，避免空结果
+            selected_focus = [s for _, _, statuses, _ in _FOCUS_OPTIONS for s in statuses]
 
         # 飞行
         is_flying = [v for v, cb in self._flight_cbs.items() if cb.isChecked()]
@@ -471,10 +461,12 @@ class FilterPanel(QWidget):
         for m, btn in self._rating_btns.items():
             btn.setStyleSheet(self._rating_btn_style(m == _DEFAULT_RATING, m))
 
-        # 对焦 → 默认精焦
-        self._active_focus = _DEFAULT_FOCUS
-        for m, (btn, color) in self._focus_btns.items():
-            btn.setStyleSheet(self._focus_btn_style(m == _DEFAULT_FOCUS, color))
+        # 对焦 → 默认精焦+合焦
+        _defaults = {"BEST", "GOOD"}
+        for mode, cb in self._focus_checks.items():
+            cb.blockSignals(True)
+            cb.setChecked(mode in _defaults)
+            cb.blockSignals(False)
 
         # 飞行 → 全选
         for cb in self._flight_cbs.values():
