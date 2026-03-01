@@ -1090,10 +1090,26 @@ class PhotoProcessor:
                             'title': bird_title,
                         })
             else:
+                # 低置信度：记日志，并将候选鸟名存入 file_bird_species 供 caption 使用
                 self._log(
-                    f"  🐦 Low confidence [{source_display}]: {top_result.get('cn_name', '?')} "
+                    f"  \U0001f426 Low confidence [{source_display}]: {top_result.get('cn_name', '?')} "
                     f"({birdid_confidence:.0f}% < {self.settings.birdid_confidence_threshold}%)"
                 )
+                if cn_name:
+                    self.file_bird_species[file_prefix] = {
+                        'cn_name': cn_name,
+                        'en_name': en_name,
+                        'low_confidence': True,
+                        'confidence': birdid_confidence,
+                    }
+                    # EXIF 标题写成 "鸟名？(62%)"
+                    low_title = f"{cn_name}\uff1f({birdid_confidence:.0f}%)"
+                    for target_file in title_targets:
+                        if target_file and os.path.exists(target_file):
+                            queue_metadata({
+                                'file': target_file,
+                                'title': low_title,
+                            })
 
         def collect_birdid_tasks(wait: bool = False):
             """Collect completed BirdID tasks.
@@ -1938,6 +1954,16 @@ class PhotoProcessor:
             
             caption_lines = []
             caption_lines.append(self.i18n.t("logs.caption_final", rating=rating_value, reason=reason))
+            # 鸟种信息（确定或候选）
+            _bird = self.file_bird_species.get(original_prefix, {})
+            if _bird:
+                _bname = _bird.get('cn_name') or _bird.get('en_name', '')
+                if _bird.get('low_confidence'):
+                    caption_lines.append(
+                        f"\u5099选鸟种：{_bname}\uff1f（把握度 {_bird.get('confidence', 0):.0f}%）"
+                    )
+                elif _bname:
+                    caption_lines.append(f"\u9e1f种：{_bname}")
             sharpness_str = f"{head_sharpness:.2f}" if head_sharpness else "N/A"
             topiq_str = f"{topiq:.2f}" if topiq else "N/A"
             caption_lines.append(self.i18n.t("logs.caption_data", conf=confidence, sharp=sharpness_str, nima=topiq_str, vis=best_eye_visibility))
