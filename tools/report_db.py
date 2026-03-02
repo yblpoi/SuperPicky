@@ -532,19 +532,19 @@ class ReportDB:
         if where_clauses:
             where_sql = "WHERE " + " AND ".join(where_clauses)
 
-        # Determine initial ordering for the SQL query
-        # If picked_only is True, we'll do a post-processing sort, so initial SQL sort can be filename
+        # Determine sort order
+        sort_by = filters.get("sort_by") or "filename"
         picked_only = filters.get("picked_only", False)
+
         if picked_only:
-            order_sql = "ORDER BY filename ASC" # Default sort for initial fetch
+            # 精选模式：先全量取回，再 Python 层按 topiq+sharpness 确定 top 25%
+            order_sql = "ORDER BY filename ASC"
+        elif sort_by == "sharpness_desc":
+            order_sql = "ORDER BY COALESCE(adj_sharpness, head_sharp, -1e99) DESC, filename ASC"
+        elif sort_by == "aesthetic_desc":
+            order_sql = "ORDER BY COALESCE(adj_topiq, nima_score, -1e99) DESC, filename ASC"
         else:
-            sort_by = filters.get("sort_by") or "filename"
-            if sort_by == "sharpness_desc":
-                order_sql = "ORDER BY COALESCE(adj_sharpness, head_sharp, -1e99) DESC, filename ASC"
-            elif sort_by == "aesthetic_desc":
-                order_sql = "ORDER BY COALESCE(adj_topiq, nima_score, -1e99) DESC, filename ASC"
-            else:
-                order_sql = "ORDER BY filename ASC"
+            order_sql = "ORDER BY filename ASC"
 
         sql = f"SELECT * FROM photos {where_sql} {order_sql}"
 
@@ -553,17 +553,28 @@ class ReportDB:
             results = [dict(row) for row in cursor.fetchall()]
 
             if picked_only and results:
-                # Sort by adj_topiq (desc) then adj_sharpness (desc)
-                # Use a stable sort by filename for ties
+                # 按 topiq+sharpness 选出 top 25%（选片逻辑不变）
                 results.sort(key=lambda x: (
                     x.get("adj_topiq", x.get("nima_score", -1e99)),
                     x.get("adj_sharpness", x.get("head_sharp", -1e99)),
                     x.get("filename", "")
                 ), reverse=True)
-
-                # Take the top 25%
                 num_to_keep = max(1, int(len(results) * 0.25))
                 results = results[:num_to_keep]
+
+                # 截取后按用户的 sort_by 重新排序展示
+                if sort_by == "sharpness_desc":
+                    results.sort(key=lambda x: (
+                        -(x.get("adj_sharpness") or x.get("head_sharp") or -1e99),
+                        x.get("filename", "")
+                    ))
+                elif sort_by == "aesthetic_desc":
+                    results.sort(key=lambda x: (
+                        -(x.get("adj_topiq") or x.get("nima_score") or -1e99),
+                        x.get("filename", "")
+                    ))
+                else:
+                    results.sort(key=lambda x: x.get("filename", ""))
 
         return results
 

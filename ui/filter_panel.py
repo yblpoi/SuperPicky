@@ -479,9 +479,10 @@ class FilterPanel(QWidget):
         self.species_combo.setCurrentIndex(0)
         self.species_combo.blockSignals(False)
 
-        # 排序 → 锐度
+        # 排序 → 恢复用户上次选择（不强制重置为锐度）
         self._sort_combo.blockSignals(True)
-        idx = self._sort_combo.findData("sharpness_desc")
+        saved_sort = self._adv_config.get_browser_sort()
+        idx = self._sort_combo.findData(saved_sort)
         self._sort_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._sort_combo.blockSignals(False)
 
