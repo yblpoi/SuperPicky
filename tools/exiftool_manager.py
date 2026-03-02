@@ -213,7 +213,7 @@ class ExifToolManager:
                 '-@', '-',
                 '-common_args',
                 '-charset', 'utf8',
-                '-overwrite_original',
+                '-overwrite_original_in_place',  # 保留文件 Birth Time（inode 不变）
             ]
             
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
@@ -592,7 +592,8 @@ class ExifToolManager:
         if original_struct is None:
             return self._write_metadata_xmp_sidecar(item)
 
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=Path(file_path).suffix)
+        # 在与原文件相同目录创建临时文件，确保 os.replace 是同目录 rename（保留 Birth Time）
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=Path(file_path).suffix, dir=os.path.dirname(file_path))
         os.close(tmp_fd)
         try:
             shutil.copy2(file_path, tmp_path)
@@ -672,8 +673,8 @@ class ExifToolManager:
         # 文件路径
         args.append(file_path)
         
-        # 选项
-        args.append('-overwrite_original')
+        # 选项（in_place 保留文件 Birth Time，不创建新 inode）
+        args.append('-overwrite_original_in_place')
 
         try:
             # 发送命令
