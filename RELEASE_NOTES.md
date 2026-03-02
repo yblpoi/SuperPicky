@@ -30,7 +30,7 @@
 - [百度网盘](https://pan.baidu.com/s/1XBaGXPim_WzjpNBgG-altg?pwd=c2a6) (c2a6) | [Google Drive](https://drive.google.com/file/d/1IKSxB3KbQdDO7VhnsGnHjOb2EgqZIgSB/view?usp=sharing) | [夸克网盘](https://pan.quark.cn/s/d15276717367)
 
 **Windows CPU**:
-- [GitHub](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_Win64_CPU_6414482.zip) | [百度网盘](https://pan.baidu.com/s/1I4zr6pbjcbgdc676k4LIag?pwd=j88b) (j88b) | [Google Drive](https://drive.google.com/file/d/1TlS52C58UXGJq93RdALBFNYlwpPhrb4c/view?usp=sharing) | [夸克网盘](https://pan.quark.cn/s/1b7016c16f79)
+- [GitHub](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_Win64_CPU_4.1.0-44e7981.zip) | [百度网盘](https://pan.baidu.com/s/1Qlm0W1fWAnZAqRevhThgWg?pwd=4fis) (4fis) | [Google Drive](https://drive.google.com/file/d/1_G5R-Oe6QgsQ687G07b1Il6yWKDLn5IU/view?usp=sharing) | [夸克网盘](https://pan.quark.cn/s/1b7016c16f79)
 
 ---
 
@@ -208,8 +208,8 @@ This release brings a major architectural overhaul, migrating from CSV to SQLite
 - [夸克网盘](https://pan.quark.cn/s/d15276717367)
 
 **CPU Version**
-- GitHub: [SuperPicky_v4.1.0_Win64_CPU_6414482.zip](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_Win64_CPU_6414482.zip)
-- [百度网盘](https://pan.baidu.com/s/1I4zr6pbjcbgdc676k4LIag?pwd=j88b) 提取码: j88b
-- [Google Drive](https://drive.google.com/file/d/1TlS52C58UXGJq93RdALBFNYlwpPhrb4c/view?usp=sharing)
+- GitHub: [SuperPicky_Win64_CPU_4.1.0-44e7981.zip](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_Win64_CPU_4.1.0-44e7981.zip)
+- [百度网盘](https://pan.baidu.com/s/1Qlm0W1fWAnZAqRevhThgWg?pwd=4fis) 提取码: 4fis
+- [Google Drive](https://drive.google.com/file/d/1_G5R-Oe6QgsQ687G07b1Il6yWKDLn5IU/view?usp=sharing)
 - [夸克网盘](https://pan.quark.cn/s/1b7016c16f79)
 
