@@ -196,8 +196,14 @@ log_success "清理完成"
 # ============================================
 log_step "2.5" "注入构建信息"
 
-# 获取 git commit hash
-COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# 从 Python 代码读取 Commit Hash（保证跨平台一致）
+COMMIT_HASH=$(python3 -c "
+try:
+    from core.build_info_local import COMMIT_HASH
+except ImportError:
+    from core.build_info import COMMIT_HASH
+print(COMMIT_HASH or 'unknown')
+")
 log_info "Commit Hash: ${COMMIT_HASH}"
 
 # 备份原始 build_info.py

@@ -28,8 +28,15 @@ else
     ARCH_TAG="intel"
 fi
 
-# 获取 Git Commit Hash（短版本，7位）
-COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# 从 Python 代码读取 Commit Hash（保证跨平台一致）
+# 优先读 build_info_local.py（本地 override），其次 build_info.py
+COMMIT_HASH=$(python3 -c "
+try:
+    from core.build_info_local import COMMIT_HASH
+except ImportError:
+    from core.build_info import COMMIT_HASH
+print(COMMIT_HASH or 'unknown')
+")
 
 # 文件名格式: SuperPicky_v4.1.0_arm64_f20f9b5.dmg
 PKG_NAME="${APP_NAME}_v${VERSION}_${ARCH_TAG}_${COMMIT_HASH}_Installer.pkg"
