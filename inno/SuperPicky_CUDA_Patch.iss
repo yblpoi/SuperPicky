@@ -30,6 +30,7 @@ WindowVisible=yes
 [Registry]
 Root: HKLM; Subkey: SOFTWARE\SuperPicky; ValueType: string; ValueName: InstallDir; ValueData: {app}; Flags: uninsdeletevalue
 Root: HKLM; Subkey: SOFTWARE\SuperPicky; ValueType: string; ValueName: Version; ValueData: {#SetupSetting("AppVersion")}; Flags: uninsdeletevalue
+Root: HKLM; Subkey: SOFTWARE\SuperPicky; ValueType: string; ValueName: CUDA_Patch_Installed; ValueData: "1"; Flags: uninsdeletevalue
 
 [Code]
 var

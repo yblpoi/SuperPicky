@@ -28,6 +28,7 @@ WindowVisible=yes
 [Registry]
 Root: HKLM; Subkey: SOFTWARE\SuperPicky; ValueType: string; ValueName: InstallDir; ValueData: {app}; Flags: uninsdeletevalue
 Root: HKLM; Subkey: SOFTWARE\SuperPicky; ValueType: string; ValueName: Version; ValueData: {#SetupSetting("AppVersion")}; Flags: uninsdeletevalue
+Root: HKLM; Subkey: SOFTWARE\SuperPicky; ValueType: string; ValueName: CUDA_Patch_Installed; ValueData: "1"; Flags: uninsdeletevalue
 
 [Code]
 function InitializeSetup(): Boolean;
@@ -72,6 +73,9 @@ Filename: "https://superpicky.app/"; Description: "访问项目网站"; Flags: p
 
 [UninstallRun]
 Filename: "taskkill.exe"; Parameters: "/f /im SuperPicky.exe"; Flags: skipifdoesntexist; RunOnceId: "KillSuperPickyProcess"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"

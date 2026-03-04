@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 import os
+import sys
 import shutil
 import hashlib
+
+# 确保输出编码为 UTF-8
+if sys.platform.startswith('win'):
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # 定义路径
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
