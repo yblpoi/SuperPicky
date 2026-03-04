@@ -9,7 +9,6 @@ Compression=lzma2/ultra64
 LZMAUseSeparateProcess=yes
 LZMADictionarySize=1048576
 LZMANumFastBytes=273
-LZMAUseSeparateProcess=yes
 SolidCompression=yes
 CreateAppDir=yes
 Uninstallable=no
