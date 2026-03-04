@@ -1,10 +1,10 @@
 [Setup]
 AppName=SuperPicky
-AppVersion=4.1.0-627f50d
+AppVersion=4.1.0-0e7bc32
 DefaultDirName={commonpf}\SuperPicky
 DefaultGroupName=SuperPicky
 AppPublisherURL=https://superpicky.app/
-OutputBaseFilename=SuperPicky_Setup_Win64
+OutputBaseFilename=SuperPicky_Setup_Win64_4.1.0_0e7bc32
 Compression=lzma2/ultra64
 LZMAUseSeparateProcess=yes
 LZMADictionarySize=1048576

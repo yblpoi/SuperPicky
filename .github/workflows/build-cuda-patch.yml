@@ -1,0 +1,93 @@
+name: Build and Release SuperPicky CUDA Patch
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number for the release'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.ref }}
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+
+    - name: Create Cuda Virtual Environment
+      run: |
+        python -m venv .venv-cuda  
+        .venv-cuda\Scripts\Activate.ps1
+        pip install --upgrade pip
+        pip install -r requirements_cuda.txt
+        pip install pyinstaller lap
+        
+    - name: Update version For Inno Setup
+      run: |
+        .venv-cuda\Scripts\Activate.ps1
+        python scripts\update_inno_version.py 
+        
+    - name: Build CUDA version
+      run: |
+        .venv-cuda\Scripts\Activate.ps1
+        .\build_release_cuda.bat
+
+    - name: DEL CUDA Virtual Environment
+      run: |
+        Remove-Item -Path .venv-cuda -Recurse -Force -ErrorAction Ignore
+
+    - name: Create CPU Virtual Environment
+      run: |
+        python -m venv .venv  
+        .venv\Scripts\Activate.ps1
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller lap
+    
+    - name: Build CPU version
+      run: |
+        .venv\Scripts\Activate.ps1
+        .\build_release_cpu.bat
+
+    - name: Create Cuda Patch
+      run: |
+        .venv\Scripts\Activate.ps1
+        python scripts\Create_cuda_patch.py   
+
+    - name: Create Patch installer with Inno Setup
+      uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
+      with:
+        path: ./output/cuda_patch/SuperPicky_CUDA_Patch.iss
+
+    - name: Prepare release assets
+      run: |
+        $version = "${{ github.event.inputs.version || github.ref_name }}".TrimStart('v')
+        New-Item -ItemType Directory -Path release_assets -Force
+        Get-ChildItem -Path output -Recurse -Filter "SuperPicky_CUDA_Patch_Win64*.exe" | ForEach-Object {
+          Copy-Item -Path $_.FullName -Destination release_assets\
+        }
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.version || github.ref_name }}
+        name: SuperPicky ${{ github.event.inputs.version || github.ref_name }}
+        body: |
+          Release of SuperPicky ${{ github.event.inputs.version || github.ref_name }}
+        draft: false
+        prerelease: false
+        files: |
+          release_assets/*
