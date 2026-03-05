@@ -856,18 +856,14 @@ def cmd_batch(args):
 def cmd_batch_reset(args):
     """批量重置所有已处理的子目录"""
     from core.recursive_scanner import is_processed
+    from tools.merged_report_db import find_processed_subdirs
     import shutil
     
     print_banner()
-    print(f"\n🔄 批量重置: {args.directory}")
+    print(f"\n\U0001f504 batch reset: {args.directory}")
     
-    # 查找所有已处理的子目录
-    processed_dirs = []
-    for root, subdirs, files in os.walk(args.directory):
-        # 排除隐藏目录
-        subdirs[:] = [d for d in subdirs if not d.startswith('.')]
-        if is_processed(root) and root != args.directory:
-            processed_dirs.append(root)
+    # Find all processed directories (including root)
+    processed_dirs = find_processed_subdirs(args.directory)
     
     if not processed_dirs:
         print("\n❌ 未找到已处理的子目录")

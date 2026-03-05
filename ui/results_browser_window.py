@@ -254,8 +254,10 @@ class ResultsBrowserWindow(QMainWindow):
         self.i18n = get_i18n()
         self._db: Optional[ReportDB] = None
         self._directory: str = ""
-        self._all_photos: list = []     # 当前目录所有照片
-        self._filtered_photos: list = [] # 当前筛选后的照片
+        self._all_photos: list = []
+        self._filtered_photos: list = []
+        self._is_merged: bool = False
+        self._sub_dirs: list = []
 
         self._setup_window()
         self._setup_menu()
@@ -390,6 +392,27 @@ class ResultsBrowserWindow(QMainWindow):
 
         layout.addSpacing(8)
 
+        # Directory switcher combo box
+        self._dir_combo = QComboBox()
+        self._dir_combo.setFixedHeight(32)
+        self._dir_combo.setMinimumWidth(200)
+        self._dir_combo.setMaximumWidth(400)
+        self._dir_combo.setStyleSheet(f"""
+            QComboBox {{
+                color: {COLORS['text_secondary']};
+                background: {COLORS['bg_primary']};
+                border: 1px solid {COLORS['border_subtle']};
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 12px;
+                font-family: {FONTS['mono']};
+            }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+        """)
+        self._dir_combo.currentIndexChanged.connect(self._on_subdir_changed)
+        self._dir_combo.hide()
+        layout.addWidget(self._dir_combo)
+
         # 目录显示标签
         self._dir_label = QLabel(self.i18n.t("browser.open_dir"))
         self._dir_label.setStyleSheet(f"""
@@ -457,48 +480,115 @@ class ResultsBrowserWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def open_directory(self, directory: str):
-        """加载指定目录的 report.db 并刷新界面。"""
+        """Load report.db. Supports batch multi-dir mode."""
         if not directory:
             return
 
-        db_path = os.path.join(directory, ".superpicky", "report.db")
-        if not os.path.exists(db_path):
-            self._show_no_db_hint(directory)
-            return
-
-        # 关闭旧数据库
         if self._db:
             try:
                 self._db.close()
             except Exception:
                 pass
+            self._db = None
 
+        self._is_merged = False
+        self._sub_dirs = []
+
+        from tools.merged_report_db import find_processed_subdirs
+        processed = find_processed_subdirs(directory)
+
+        self._dir_combo.blockSignals(True)
+        self._dir_combo.clear()
+
+        if len(processed) > 1:
+            self._sub_dirs = processed
+            total = sum(self._count_db_photos(d) for d in processed)
+            self._dir_combo.addItem(f"\U0001f4c2 All ({total})", "__ALL__")
+            for d in processed:
+                rel = os.path.relpath(d, directory)
+                n = self._count_db_photos(d)
+                label = f"  ./ ({n})" if rel == '.' else f"  {rel}/ ({n})"
+                self._dir_combo.addItem(label, d)
+            self._dir_combo.show()
+            self._dir_label.hide()
+        else:
+            self._dir_combo.hide()
+            self._dir_label.show()
+            if not processed:
+                db_path = os.path.join(directory, ".superpicky", "report.db")
+                if not os.path.exists(db_path):
+                    self._show_no_db_hint(directory)
+                    self._dir_combo.blockSignals(False)
+                    return
+
+        self._dir_combo.blockSignals(False)
+        self._directory = directory
+
+        if len(processed) > 1:
+            self._load_merged(directory, processed)
+        elif len(processed) == 1:
+            self._load_single(processed[0])
+        else:
+            self._load_single(directory)
+
+    def _count_db_photos(self, directory: str) -> int:
+        db_path = os.path.join(directory, ".superpicky", "report.db")
+        if not os.path.exists(db_path):
+            return 0
+        try:
+            import sqlite3 as _sql
+            conn = _sql.connect(db_path)
+            n = conn.execute("SELECT COUNT(*) FROM photos WHERE rating != -1").fetchone()[0]
+            conn.close()
+            return n
+        except Exception:
+            return 0
+
+    def _load_single(self, directory: str):
+        self._is_merged = False
         try:
             self._db = ReportDB(directory)
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
             return
-
         self._directory = directory
         short_name = os.path.basename(directory) or directory
         self._dir_label.setText(short_name)
         self._dir_label.setToolTip(directory)
-
-        # 加载数据
         self._all_photos = self._db.get_all_photos()
-
-        # 先重置筛选（会触发 filters_changed -> _apply_filters 加载缩略图）
         self._filter_panel.reset_all()
-
-        # 重置后更新鸟种列表
         species = self._db.get_distinct_species(use_en=self.i18n.current_lang.startswith('en'))
         self._filter_panel.update_species_list(species)
-
-        # 默认筛选若无结果但库中有数据，自动勾选全部评分并刷新
         if len(self._all_photos) > 0 and len(self._filtered_photos) == 0:
             self._filter_panel.select_all_ratings()
+        self.setWindowTitle(f"{self.i18n.t('browser.title')} \u2014 {short_name}")
 
-        self.setWindowTitle(f"{self.i18n.t('browser.title')} — {short_name}")
+    def _load_merged(self, root_dir: str, sub_dirs: list):
+        from tools.merged_report_db import MergedReportDB
+        self._is_merged = True
+        try:
+            self._db = MergedReportDB(root_dir, sub_dirs)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", str(e))
+            return
+        self._directory = root_dir
+        self._all_photos = self._db.get_all_photos()
+        self._filter_panel.reset_all()
+        species = self._db.get_distinct_species(use_en=self.i18n.current_lang.startswith('en'))
+        self._filter_panel.update_species_list(species)
+        if len(self._all_photos) > 0 and len(self._filtered_photos) == 0:
+            self._filter_panel.select_all_ratings()
+        short = os.path.basename(root_dir) or root_dir
+        self.setWindowTitle(f"{self.i18n.t('browser.title')} \u2014 {short} (All)")
+
+    def _on_subdir_changed(self, index: int):
+        if index < 0:
+            return
+        value = self._dir_combo.itemData(index)
+        if value == "__ALL__":
+            self._load_merged(self._directory, self._sub_dirs)
+        else:
+            self._load_single(value)
 
     # ------------------------------------------------------------------
     #  私有槽
@@ -511,15 +601,18 @@ class ResultsBrowserWindow(QMainWindow):
         self.closed.emit()
 
     def _resolve_photo_paths(self, photo: dict) -> dict:
-        """将 photo dict 中的相对路径解析为相对于当前目录的绝对路径。"""
         _PATH_KEYS = ('original_path', 'current_path', 'temp_jpeg_path',
                       'debug_crop_path', 'yolo_debug_path')
         resolved = dict(photo)
+        if self._is_merged and 'source_dir' in photo:
+            base_dir = os.path.join(self._directory, photo['source_dir'])
+        else:
+            base_dir = self._directory
+        resolved['_base_dir'] = base_dir
         for key in _PATH_KEYS:
             val = photo.get(key)
             if val and not os.path.isabs(val):
-                resolved[key] = os.path.join(self._directory, val)
-        # 注入 burst_total 供缩略图角标显示
+                resolved[key] = os.path.join(base_dir, val)
         bid = resolved.get("burst_id")
         if bid is not None and hasattr(self, '_burst_totals'):
             resolved["burst_total"] = self._burst_totals.get(bid, 1)
@@ -628,8 +721,8 @@ class ResultsBrowserWindow(QMainWindow):
         self._compare_btn.setVisible(n == 2)
 
     def _show_context_menu(self, photo: dict, pos):
-        """C4：右键菜单（由 ThumbnailGrid 通过 parent chain 调用）。"""
-        _show_context_menu_impl(self, photo, pos, self._directory)
+        base_dir = photo.get('_base_dir', self._directory)
+        _show_context_menu_impl(self, photo, pos, base_dir)
 
     @Slot(dict, object)
     def _on_fullscreen_context_menu(self, photo: dict, global_pos):
