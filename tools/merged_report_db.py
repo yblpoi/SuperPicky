@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+合并 ReportDB — 通过 SQLite ATTACH 实时联合查询多个目录的 report.db
+
+用于结果浏览器的"全部"视图，无需复制数据，零额外磁盘开销。
+"""
+
+import os
+import sqlite3
+import threading
+from typing import List, Dict, Optional, Any
+
+from core.recursive_scanner import is_processed
+
+
+class MergedReportDB:
+    """
+    合并多个目录的 report.db，提供与 ReportDB 兼容的查询接口。
+    
+    通过 SQLite ATTACH DATABASE 挂载各子目录的 DB，
+    使用 UNION ALL 查询并附加 source_dir 列。
+    """
+    
+    def __init__(self, root_dir: str, sub_dirs: List[str]):
+        """
+        Args:
+            root_dir: 根目录（用于计算相对路径）
+            sub_dirs: 包含 report.db 的子目录绝对路径列表
+        """
+        self.root_dir = root_dir
+        self.sub_dirs = sub_dirs
+        self._lock = threading.RLock()
+        
+        # 内存数据库作为主连接
+        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        
+        # ATTACH 各子目录的 DB
+        self._db_aliases: List[str] = []
+        self._alias_to_dir: Dict[str, str] = {}
+        
+        for i, sub_dir in enumerate(sub_dirs):
+            db_path = os.path.join(sub_dir, ".superpicky", "report.db")
+            if not os.path.exists(db_path):
+                continue
+            alias = f"db{i}"
+            try:
+                self._conn.execute(f"ATTACH DATABASE ? AS {alias}", (db_path,))
+                self._db_aliases.append(alias)
+                self._alias_to_dir[alias] = sub_dir
+            except Exception:
+                pass
+    
+    def _build_union_sql(self, where: str = "", order: str = "ORDER BY source_dir, filename",
+                         extra_params: list = None) -> tuple:
+        """构建 UNION ALL 查询"""
+        if not self._db_aliases:
+            return "SELECT 1 WHERE 0", []
+        
+        parts = []
+        params = list(extra_params or [])
+        
+        for alias in self._db_aliases:
+            rel_dir = os.path.relpath(self._alias_to_dir[alias], self.root_dir)
+            parts.append(f"SELECT *, '{rel_dir}' AS source_dir FROM {alias}.photos")
+        
+        union_sql = " UNION ALL ".join(parts)
+        
+        if where:
+            sql = f"SELECT * FROM ({union_sql}) AS merged WHERE {where} {order}"
+        else:
+            sql = f"SELECT * FROM ({union_sql}) AS merged {order}"
+        
+        return sql, params
+    
+    def get_all_photos(self) -> List[dict]:
+        """获取所有目录的照片记录"""
+        with self._lock:
+            sql, params = self._build_union_sql()
+            cursor = self._conn.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_photos_by_filters(self, filters: Optional[dict] = None) -> List[dict]:
+        """按筛选条件查询（兼容 ReportDB 接口）"""
+        filters = filters or {}
+        
+        where_clauses = []
+        params: List[Any] = []
+        
+        # 排除无鸟
+        where_clauses.append("rating != -1")
+        
+        ratings = filters.get("ratings")
+        if isinstance(ratings, list):
+            ratings = [r for r in ratings if r != -1]
+            if not ratings:
+                return []
+            placeholders = ", ".join(["?"] * len(ratings))
+            where_clauses.append(f"rating IN ({placeholders})")
+            params.extend(ratings)
+        
+        has_low_rating = isinstance(ratings, list) and any(r <= 0 for r in ratings)
+        
+        focus_statuses = filters.get("focus_statuses")
+        if isinstance(focus_statuses, list):
+            if not focus_statuses:
+                return []
+            placeholders = ", ".join(["?"] * len(focus_statuses))
+            condition = f"focus_status IN ({placeholders})"
+            if has_low_rating:
+                condition = f"({condition} OR focus_status IS NULL)"
+            where_clauses.append(condition)
+            params.extend(focus_statuses)
+        
+        is_flying = filters.get("is_flying")
+        if isinstance(is_flying, list):
+            if not is_flying:
+                return []
+            placeholders = ", ".join(["?"] * len(is_flying))
+            condition = f"is_flying IN ({placeholders})"
+            if has_low_rating:
+                condition = f"({condition} OR is_flying IS NULL)"
+            where_clauses.append(condition)
+            params.extend(is_flying)
+        
+        species_col = None
+        species_val = None
+        if "bird_species_en" in filters:
+            species_col = "bird_species_en"
+            species_val = filters.get("bird_species_en")
+        elif "bird_species_cn" in filters:
+            species_col = "bird_species_cn"
+            species_val = filters.get("bird_species_cn")
+        
+        if isinstance(species_val, str) and species_val.strip():
+            where_clauses.append(f"{species_col} = ?")
+            params.append(species_val.strip())
+        
+        where_sql = " AND ".join(where_clauses) if where_clauses else ""
+        
+        # 排序
+        sort_by = filters.get("sort_by") or "filename"
+        picked_only = filters.get("picked_only", False)
+        
+        if sort_by == "sharpness_desc":
+            order = "ORDER BY COALESCE(adj_sharpness, head_sharp, -1e99) DESC, filename ASC"
+        elif sort_by == "aesthetic_desc":
+            order = "ORDER BY COALESCE(adj_topiq, nima_score, -1e99) DESC, filename ASC"
+        else:
+            order = "ORDER BY source_dir ASC, filename ASC"
+        
+        sql, base_params = self._build_union_sql(where=where_sql, order=order, extra_params=params)
+        
+        with self._lock:
+            cursor = self._conn.execute(sql, base_params)
+            results = [dict(row) for row in cursor.fetchall()]
+        
+        if picked_only and results:
+            results.sort(key=lambda x: (
+                x.get("adj_topiq", x.get("nima_score", -1e99)),
+                x.get("adj_sharpness", x.get("head_sharp", -1e99)),
+            ), reverse=True)
+            num_to_keep = max(1, int(len(results) * 0.25))
+            results = results[:num_to_keep]
+            if sort_by == "sharpness_desc":
+                results.sort(key=lambda x: -(x.get("adj_sharpness") or x.get("head_sharp") or -1e99))
+            elif sort_by == "aesthetic_desc":
+                results.sort(key=lambda x: -(x.get("adj_topiq") or x.get("nima_score") or -1e99))
+            else:
+                results.sort(key=lambda x: (x.get("source_dir", ""), x.get("filename", "")))
+        
+        return results
+    
+    def get_distinct_species(self, use_en: bool = False) -> List[str]:
+        """获取所有目录的去重鸟种列表"""
+        col = "bird_species_en" if use_en else "bird_species_cn"
+        
+        if not self._db_aliases:
+            return []
+        
+        parts = []
+        for alias in self._db_aliases:
+            parts.append(f"SELECT DISTINCT {col} FROM {alias}.photos WHERE {col} IS NOT NULL AND {col} != ''")
+        
+        sql = f"SELECT DISTINCT {col} FROM ({' UNION '.join(parts)}) ORDER BY {col}"
+        
+        with self._lock:
+            cursor = self._conn.execute(sql)
+            return [row[0] for row in cursor.fetchall()]
+    
+    def get_statistics(self) -> dict:
+        """汇总统计"""
+        photos = self.get_all_photos()
+        stats = {'total': len(photos), 'has_bird': 0, 'flying': 0, 'by_rating': {}}
+        for p in photos:
+            if p.get('has_bird'):
+                stats['has_bird'] += 1
+            if p.get('is_flying'):
+                stats['flying'] += 1
+            r = p.get('rating', 0)
+            stats['by_rating'][r] = stats['by_rating'].get(r, 0) + 1
+        return stats
+    
+    def close(self):
+        """关闭连接"""
+        try:
+            for alias in self._db_aliases:
+                self._conn.execute(f"DETACH DATABASE {alias}")
+        except Exception:
+            pass
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+    
+    @property
+    def directory(self):
+        """兼容 ReportDB.directory 属性"""
+        return self.root_dir
+
+
+def find_processed_subdirs(root_dir: str) -> List[str]:
+    """查找根目录及其子目录中所有已处理的目录"""
+    result = []
+    
+    if is_processed(root_dir):
+        result.append(root_dir)
+    
+    for root, subdirs, files in os.walk(root_dir):
+        subdirs[:] = [d for d in subdirs if not d.startswith('.') and not d.startswith('burst_')]
+        from constants import RATING_FOLDER_NAMES, RATING_FOLDER_NAMES_EN
+        star_names = set(RATING_FOLDER_NAMES.values()) | set(RATING_FOLDER_NAMES_EN.values())
+        subdirs[:] = [d for d in subdirs if d not in star_names]
+        
+        for d in subdirs:
+            full = os.path.join(root, d)
+            if is_processed(full):
+                result.append(full)
+    
+    return result
