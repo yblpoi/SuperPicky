@@ -1824,37 +1824,73 @@ class BirdIDDockWidget(QDockWidget):
             self._take_screenshot_win()
 
     def _take_screenshot_mac(self):
-        """macOS: 使用 screencapture -i -s 交互截图，结果保存为临时文件"""
+        """macOS: 使用 screencapture -i -s 截图到临时文件
+        用 Popen 非阻塞启动，Qt 主线程轮询进程退出，避免阻塞事件循环"""
         import subprocess
         import tempfile
 
-        tmp_file = os.path.join(tempfile.gettempdir(), 'birdid_screenshot.png')
+        self._sc_tmp_file = os.path.join(tempfile.gettempdir(), 'birdid_screenshot.png')
 
-        # 删除旧文件，方便后面判断截图是否完成
-        if os.path.exists(tmp_file):
+        # 删除旧文件
+        if os.path.exists(self._sc_tmp_file):
             try:
-                os.remove(tmp_file)
+                os.remove(self._sc_tmp_file)
             except Exception:
                 pass
 
         try:
-            # -i 交互模式  -s 仅框选区域  阻塞直到用户完成或取消
-            subprocess.run(
-                ['screencapture', '-i', '-s', tmp_file],
-                timeout=120
+            # 非阻塞启动 — Qt 事件循环继续运行，screencapture UI 才能正常显示
+            self._sc_proc = subprocess.Popen(
+                ['screencapture', '-i', '-s', self._sc_tmp_file],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
-        except subprocess.TimeoutExpired:
-            return
         except FileNotFoundError:
-            self.status_label.setText("screencapture 不可用")
-            self.status_label.setStyleSheet(f"font-size: 11px; color: {COLORS['error']};")
+            self._show_screenshot_error("screencapture 不可用")
             return
 
-        # 用户按 Esc 取消时不会生成文件
-        if not os.path.exists(tmp_file):
+        # 停止上次残留的轮询
+        if hasattr(self, '_sc_poll_timer') and self._sc_poll_timer is not None:
+            self._sc_poll_timer.stop()
+
+        # 每 200ms 检查一次进程是否结束
+        self._sc_poll_timer = QTimer(self)
+        self._sc_poll_timer.timeout.connect(self._poll_screencapture_done)
+        self._sc_poll_timer.start(200)
+
+    def _poll_screencapture_done(self):
+        """主线程轮询：screencapture 进程结束后加载文件"""
+        if not hasattr(self, '_sc_proc') or self._sc_proc is None:
+            self._sc_poll_timer.stop()
             return
 
-        self.on_file_dropped(tmp_file)
+        if self._sc_proc.poll() is not None:
+            self._sc_poll_timer.stop()
+            self._sc_proc = None
+            # 用户按 Esc 取消时不会生成文件
+            if os.path.exists(self._sc_tmp_file):
+                self.on_file_dropped(self._sc_tmp_file)
+
+    def _load_screenshot_from_clipboard(self):
+        """从剪贴板读取截图并保存为临时文件（Windows 模式备用）"""
+        import tempfile
+        clipboard = QApplication.clipboard()
+        image = clipboard.image()
+        if image is None or image.isNull():
+            return
+        tmp_file = os.path.join(tempfile.gettempdir(), 'birdid_screenshot.png')
+        if image.save(tmp_file, 'PNG'):
+            self.on_file_dropped(tmp_file)
+        else:
+            self._show_screenshot_error("截图保存失败")
+
+    def _show_screenshot_error(self, msg: str):
+        """显示截图错误提示"""
+        self.status_label.setText(msg)
+        self.status_label.setStyleSheet(f"font-size: 11px; color: {COLORS['error']};")
+        self.status_label.show()
+
+
 
     def _take_screenshot_win(self):
         """Windows: 发送 Win+Shift+S 唤起截图工具，轮询剪贴板等待图像"""
