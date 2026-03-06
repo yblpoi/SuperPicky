@@ -898,6 +898,7 @@
     "stats_focus_precise": "🟢 Precise Focus: {count}",
     "btn_screenshot": "Screenshot",
     "screenshot_hint": "Take a screenshot to identify...",
+    "click_to_copy": "Click to copy name",
     "stats_species": "🦜 {count} species: {names}"
   },
   "cli": {
