@@ -136,7 +136,7 @@ Review unmatched species in the report output and add manual overrides to `scrip
 
 ## 📄 License
 
-Open sourced under **GPL-3.0 License**.
+Open sourced under **GNU AFFERO GENERAL PUBLIC LICENSE Version 3**.
 
 This project uses:
 - **YOLO11** by Ultralytics
