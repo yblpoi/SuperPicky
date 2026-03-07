@@ -130,11 +130,6 @@ a = Analysis(
         'pyarrow',
         'facexlib',
         'datasets',
-        # torch 内部测试/分布式/量化模块（生产不用）
-        'torch.testing._internal',
-        'torch.distributed',
-        'torch.onnx',
-        'torch.fx',
     ],
     noarchive=False,
     optimize=0,
