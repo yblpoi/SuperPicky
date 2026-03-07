@@ -1889,6 +1889,81 @@ class BirdIDDockWidget(QDockWidget):
         用 Popen 非阻塞启动，Qt 主线程轮询进程退出，避免阻塞事件循环"""
         import tempfile
 
+        # 先检查屏幕录制权限：快速做一次非交互截图测试
+        import subprocess as _sp
+        _test_file = os.path.join(tempfile.gettempdir(), 'birdid_sc_test.png')
+        try:
+            _r = _sp.run(['screencapture', '-x', '-R', '0,0,1,1', _test_file],
+                         capture_output=True, timeout=5)
+            _test_ok = (_r.returncode == 0 and
+                        os.path.exists(_test_file) and
+                        os.path.getsize(_test_file) > 0)
+            if os.path.exists(_test_file):
+                os.remove(_test_file)
+        except Exception:
+            _test_ok = True  # 测试本身异常时不阻止，让后续截图自行处理
+
+        if not _test_ok:
+            print("[Screenshot] ⚠️ 屏幕录制权限未授予，显示提示")
+            from PySide6.QtWidgets import QMessageBox
+            is_en = self.i18n.current_lang.startswith('en')
+
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle(self.i18n.t("birdid.title"))
+
+            if is_en:
+                msg.setText("Screen Recording Access Needed")
+                msg.setInformativeText(
+                    "SuperPicky needs screen recording permission to capture screenshots.\n\n"
+                    "Tap \"Open Settings\" — find this app and flip the switch on.\n"
+                    "Then come back and try again!"
+                )
+                open_btn = msg.addButton("  Open Settings  ", QMessageBox.AcceptRole)
+                msg.addButton("Later", QMessageBox.RejectRole)
+            else:
+                msg.setText("需要屏幕录制权限")
+                msg.setInformativeText(
+                    "截图识鸟功能需要「屏幕录制」权限才能工作。\n\n"
+                    "点击下方按钮一键跳转设置页，为本应用开启权限后即可使用。"
+                )
+                open_btn = msg.addButton("  打开系统设置  ", QMessageBox.AcceptRole)
+                msg.addButton("稍后再说", QMessageBox.RejectRole)
+
+            msg.setStyleSheet(f"""
+                QMessageBox {{
+                    background-color: {COLORS['bg_elevated']};
+                    color: {COLORS['text_primary']};
+                }}
+                QLabel {{
+                    color: {COLORS['text_primary']};
+                    font-size: 13px;
+                }}
+                QPushButton {{
+                    background-color: {COLORS['bg_card']};
+                    color: {COLORS['text_primary']};
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 6px;
+                    padding: 6px 16px;
+                    font-size: 12px;
+                    min-width: 80px;
+                }}
+                QPushButton:hover {{
+                    background-color: {COLORS['accent']};
+                    color: {COLORS['bg_void']};
+                }}
+            """)
+            msg.exec()
+
+            if msg.clickedButton() == open_btn:
+                import subprocess as _open_sp
+                # macOS URL Scheme 直接跳转到「屏幕录制」权限页面
+                _open_sp.Popen([
+                    'open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+                ])
+            return
+        print("[Screenshot] ✅ 屏幕录制权限已授予")
+
         self._sc_tmp_file = os.path.join(tempfile.gettempdir(), 'birdid_screenshot.png')
         if os.path.exists(self._sc_tmp_file):
             try:
@@ -1908,13 +1983,16 @@ class BirdIDDockWidget(QDockWidget):
         """延迟启动 screencapture（非阻塞）"""
         import subprocess
 
+        print(f"[Screenshot] 启动 screencapture, 目标文件: {self._sc_tmp_file}")
+
         try:
             # 非阻塞启动 — Qt 事件循环继续运行，screencapture UI 才能正常显示
             self._sc_proc = subprocess.Popen(
                 ['screencapture', '-i', '-s', self._sc_tmp_file],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            print(f"[Screenshot] screencapture 进程已启动, PID: {self._sc_proc.pid}")
         except FileNotFoundError:
             # screencapture 不可用，恢复窗口
             if getattr(self, '_sc_main_win', None):
@@ -1939,6 +2017,7 @@ class BirdIDDockWidget(QDockWidget):
 
         # 超时保护（120 秒）
         if self._sc_poll_count > 600:
+            print("[Screenshot] ⚠️ 超时 (120s)，停止轮询")
             self._sc_poll_timer.stop()
             if getattr(self, '_sc_main_win', None):
                 self._sc_main_win.show()
@@ -1951,6 +2030,15 @@ class BirdIDDockWidget(QDockWidget):
 
         if self._sc_proc.poll() is not None:
             # 进程已退出
+            rc = self._sc_proc.returncode
+            stdout_data = self._sc_proc.stdout.read().decode('utf-8', errors='replace') if self._sc_proc.stdout else ''
+            stderr_data = self._sc_proc.stderr.read().decode('utf-8', errors='replace') if self._sc_proc.stderr else ''
+            print(f"[Screenshot] screencapture 退出, returncode={rc}")
+            if stdout_data.strip():
+                print(f"[Screenshot] stdout: {stdout_data.strip()}")
+            if stderr_data.strip():
+                print(f"[Screenshot] stderr: {stderr_data.strip()}")
+
             self._sc_poll_timer.stop()
             self._sc_proc = None
 
@@ -1962,9 +2050,24 @@ class BirdIDDockWidget(QDockWidget):
                 main_win.activateWindow()
 
             # 用户取消时不会生成文件
-            if os.path.exists(self._sc_tmp_file):
-                # 稍等 100ms 让窗口完全显示后再加载
-                QTimer.singleShot(100, lambda: self.on_file_dropped(self._sc_tmp_file))
+            file_exists = os.path.exists(self._sc_tmp_file)
+            if file_exists:
+                file_size = os.path.getsize(self._sc_tmp_file)
+                print(f"[Screenshot] ✅ 截图文件存在, 大小: {file_size} bytes, 路径: {self._sc_tmp_file}")
+                if file_size > 0:
+                    # 稍等 100ms 让窗口完全显示后再加载
+                    QTimer.singleShot(100, lambda: self.on_file_dropped(self._sc_tmp_file))
+                else:
+                    print("[Screenshot] ⚠️ 截图文件为空 (0 bytes)，可能缺少屏幕录制权限")
+                    self._show_screenshot_error("截图文件为空，请检查系统偏好设置 > 隐私与安全 > 屏幕录制 权限")
+            else:
+                print(f"[Screenshot] ❌ 截图文件不存在 (用户可能取消了截图)")
+                # 列出临时目录中的相关文件用于调试
+                import glob
+                tmp_dir = os.path.dirname(self._sc_tmp_file)
+                related = glob.glob(os.path.join(tmp_dir, 'birdid_*'))
+                if related:
+                    print(f"[Screenshot] 临时目录中的相关文件: {related}")
 
     def _load_screenshot_from_clipboard(self):
         """从剪贴板读取截图并保存为临时文件（Windows 模式备用）"""
