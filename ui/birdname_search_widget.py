@@ -198,6 +198,29 @@ class BirdNameSearchWidget(QWidget):
             }}
             QComboBox:hover {{ border-color: {COLORS['accent']}; }}
             QComboBox:focus {{ border-color: {COLORS['accent']}; outline: none; }}
+            QComboBox::drop-down {{ border: none; width: 18px; }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid {COLORS['text_tertiary']};
+                margin-right: 6px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {COLORS['bg_elevated']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 4px;
+                selection-background-color: {COLORS['accent']};
+                selection-color: {COLORS['text_primary']};
+                padding: 2px;
+            }}
+            QComboBox QAbstractItemView::item {{
+                padding: 4px 8px;
+                color: {COLORS['text_primary']};
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background-color: {COLORS['bg_card']};
+            }}
         """)
         self.version_combo.currentIndexChanged.connect(self._on_version_changed)
         title_row.addWidget(self.version_combo)
