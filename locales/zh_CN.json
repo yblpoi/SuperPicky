@@ -30,7 +30,10 @@
     "background_mode_title": "后台模式",
     "background_mode_msg": "应用将进入后台模式\n\n• 识鸟服务继续在后台运行\n• Lightroom 插件可以正常使用\n• 再次打开应用可恢复界面\n\n提示：服务器内存占用约 250MB",
     "view_results": "查看结果",
-    "results_browser": "图片浏览器"
+    "results_browser": "图片浏览器",
+    "recent_dirs": "最近目录",
+    "recent_dirs_clear": "清除历史记录",
+    "recent_dirs_offline": "(脱机)"
   },
   "buttons": {
     "select_dir": "📁 选择照片目录",
@@ -134,7 +137,8 @@
     "files_restored": "已恢复文件: {count}",
     "exif_reset_count": "EXIF已重置: {count}",
     "ready_for_analysis": "可以开始新的分析了",
-    "reset_failed_log": "重置失败"
+    "reset_failed_log": "重置失败",
+    "dir_unavailable": "目录不可用，请确认移动硬盘已连接。"
   },
   "logs": {
     "reset_start": "🔄 开始重置目录",
@@ -869,6 +873,9 @@
     "error_prefix": "错误: ",
     "stats_complete": "分析完成  |  {total} 张  |  {time_min:.1f} min",
     "stats_flying": "🔵 飞版: {count}",
+    "btn_screenshot": "截图识别",
+    "screenshot_hint": "请截图，完成后自动识别...",
+    "click_to_copy": "点击复制鸟名", 
     "stats_focus_precise": "🟢 精焦: {count}",
     "stats_species": "🦜 {count} 种: {names}"
   },

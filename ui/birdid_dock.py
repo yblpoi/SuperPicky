@@ -11,7 +11,8 @@ import sys
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QScrollArea, QFileDialog,
-    QProgressBar, QSizePolicy, QComboBox, QCheckBox, QSlider
+    QProgressBar, QSizePolicy, QComboBox, QCheckBox, QSlider,
+    QStackedWidget, QApplication
 )
 import json
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
@@ -231,6 +232,7 @@ class ResultCard(QFrame):
         display_name = en_name if is_en else cn_name
 
         self.name_label = QLabel(display_name)
+        self.name_label.setToolTip(self.i18n.t("birdid.click_to_copy") if hasattr(self.i18n, 't') else "Click to copy")
         self.name_label.setStyleSheet(f"""
             font-size: 13px;
             font-weight: 500;
@@ -304,6 +306,49 @@ class ResultCard(QFrame):
         self.clicked.emit(self.rank)
         super().mousePressEvent(event)
 
+    def contextMenuEvent(self, event):
+        """右键菜单：复制鸟名"""
+        from PySide6.QtWidgets import QMenu
+        is_en = self.i18n.current_lang.startswith('en')
+        name = self.en_name if is_en else self.cn_name
+
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {COLORS['bg_card']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 6px;
+                padding: 4px;
+                color: {COLORS['text_primary']};
+                font-size: 13px;
+            }}
+            QMenu::item {{
+                padding: 6px 16px;
+                border-radius: 4px;
+            }}
+            QMenu::item:selected {{
+                background-color: {COLORS['accent']};
+                color: {COLORS['bg_void']};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {COLORS['border_subtle']};
+                margin: 4px 8px;
+            }}
+        """)
+
+        copy_label = f'Copy "{name}"' if is_en else f'复制 "{name}"'
+        menu.addAction(copy_label, lambda: QApplication.clipboard().setText(name))
+
+        menu.addSeparator()
+
+        full = f"{self.cn_name} / {self.en_name} ({self.confidence:.0f}%)"
+        full_label = "Copy full info" if is_en else "复制完整信息"
+        menu.addAction(full_label, lambda: QApplication.clipboard().setText(full))
+
+        menu.exec(event.globalPos())
+
+
 
 class BirdIDDockWidget(QDockWidget):
     """鸟类识别停靠面板 - 深色主题"""
@@ -345,16 +390,61 @@ class BirdIDDockWidget(QDockWidget):
         layout.setContentsMargins(12, 6, 8, 6)
         layout.setSpacing(8)
         
-        # 标题文字（靠左）- 小号灰色 uppercase，与左侧 sectionLabel 风格一致
-        title_label = QLabel(self.i18n.t("birdid.title").upper())
-        title_label.setStyleSheet(f"""
-            color: {COLORS['text_tertiary']};
-            font-size: 11px;
-            font-weight: 500;
-            letter-spacing: 1px;
-            background: transparent;
+        # 标签切换区域
+        tabs_layout = QHBoxLayout()
+        tabs_layout.setSpacing(4)
+        
+        # 鸟类识别标签
+        self.tab_identify = QPushButton(self.i18n.t("birdid.title").upper())
+        self.tab_identify.setCheckable(True)
+        self.tab_identify.setChecked(True)
+        self.tab_identify.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLORS['accent']};
+                color: {COLORS['bg_void']};
+                border: none;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: 500;
+                letter-spacing: 1px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['accent_hover']};
+            }}
         """)
-        layout.addWidget(title_label)
+        self.tab_identify.clicked.connect(lambda: self._switch_tab(0))
+        tabs_layout.addWidget(self.tab_identify)
+        
+        # 查询鸟名标签（仅在简体中文系统显示）
+        self.tab_search = QPushButton("查询鸟名")
+        self.tab_search.setCheckable(True)
+        self.tab_search.setChecked(False)
+        self.tab_search.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {COLORS['text_tertiary']};
+                border: none;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['bg_card']};
+                color: {COLORS['text_secondary']};
+            }}
+        """)
+        self.tab_search.clicked.connect(lambda: self._switch_tab(1))
+        
+        # 检查应用语言，仅在简体中文界面显示查询鸟名标签
+        # 使用 i18n 系统而非 locale（macOS 的 locale 可能返回 'C'，不可靠）
+        if self.i18n.current_lang.startswith('zh'):
+            tabs_layout.addWidget(self.tab_search)
+        else:
+            self.tab_search.hide()
+        
+        layout.addLayout(tabs_layout)
         
         layout.addStretch()
         
@@ -899,6 +989,16 @@ class BirdIDDockWidget(QDockWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        # 创建QStackedWidget管理两个面板
+        self.stacked_widget = QStackedWidget()
+        self.stacked_widget.setStyleSheet("background: transparent;")
+        
+        # ===== 面板1: 鸟类识别 =====
+        self.identify_panel = QWidget()
+        identify_layout = QVBoxLayout(self.identify_panel)
+        identify_layout.setContentsMargins(0, 0, 0, 0)
+        identify_layout.setSpacing(12)
+
         # 拖放区域
         self.drop_area = DropArea()
         self.drop_area.fileDropped.connect(self.on_file_dropped)
@@ -1020,8 +1120,8 @@ class BirdIDDockWidget(QDockWidget):
         self.auto_identify_checkbox.setChecked(False)
         self.auto_identify_checkbox.hide()
         
-        layout.addWidget(filter_frame)
-        layout.addWidget(self.drop_area)
+        identify_layout.addWidget(filter_frame)
+        identify_layout.addWidget(self.drop_area)
 
         # 图片预览（初始隐藏，支持拖放替换）
         self.preview_label = DropPreviewLabel()
@@ -1037,7 +1137,7 @@ class BirdIDDockWidget(QDockWidget):
         self.preview_label.hide()
         self._current_pixmap = None  # 保存原始 pixmap 用于自适应缩放
         self._result_crop_pixmap = None  # 保存识别完成的裁剪图，用于结果卡片点击恢复
-        layout.addWidget(self.preview_label)
+        identify_layout.addWidget(self.preview_label)
 
         # 文件名显示
         self.filename_label = QLabel()
@@ -1049,7 +1149,7 @@ class BirdIDDockWidget(QDockWidget):
         self.filename_label.setAlignment(Qt.AlignCenter)
         self.filename_label.setWordWrap(True)
         self.filename_label.hide()
-        layout.addWidget(self.filename_label)
+        identify_layout.addWidget(self.filename_label)
 
         # 进度条
         self.progress = QProgressBar()
@@ -1068,7 +1168,7 @@ class BirdIDDockWidget(QDockWidget):
             }}
         """)
         self.progress.hide()
-        layout.addWidget(self.progress)
+        identify_layout.addWidget(self.progress)
 
         # 结果区域
         self.results_frame = QFrame()
@@ -1130,9 +1230,9 @@ class BirdIDDockWidget(QDockWidget):
             background: transparent;
         """)
         ph_layout.addWidget(ph_label)
-        layout.addWidget(self.placeholder_frame, 1)  # stretch=1，与 results_frame 同级
+        identify_layout.addWidget(self.placeholder_frame, 1)  # stretch=1，与 results_frame 同级
 
-        layout.addWidget(self.results_frame, 1)  # stretch=1，填满剩余空间
+        identify_layout.addWidget(self.results_frame, 1)  # stretch=1，填满剩余空间
 
         # 操作按钮
         btn_layout = QHBoxLayout()
@@ -1157,13 +1257,41 @@ class BirdIDDockWidget(QDockWidget):
         self.btn_new.clicked.connect(self.drop_area.selectFile)
         btn_layout.addWidget(self.btn_new)
 
+        # 截图识别按钮
+        self.btn_screenshot = QPushButton(self.i18n.t("birdid.btn_screenshot"))
+        self.btn_screenshot.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLORS['bg_card']};
+                border: 1px solid {COLORS['border']};
+                color: {COLORS['text_secondary']};
+                border-radius: 6px;
+                padding: 10px 16px;
+                font-size: 13px;
+            }}
+            QPushButton:hover {{
+                border-color: {COLORS['accent']};
+                color: {COLORS['accent']};
+            }}
+        """)
+        self.btn_screenshot.clicked.connect(self._take_screenshot)
+        btn_layout.addWidget(self.btn_screenshot)
 
-
-        layout.addLayout(btn_layout)
+        identify_layout.addLayout(btn_layout)
 
         # 状态标签（隐藏，保留变量用于内部状态追踪）
         self.status_label = QLabel("")
         self.status_label.hide()
+        
+        # ===== 面板2: 查询鸟名 =====
+        from ui.birdname_search_widget import BirdNameSearchWidget
+        self.search_panel = BirdNameSearchWidget()
+        
+        # 将两个面板添加到stacked_widget
+        self.stacked_widget.addWidget(self.identify_panel)
+        self.stacked_widget.addWidget(self.search_panel)
+        
+        # 将stacked_widget添加到主布局
+        layout.addWidget(self.stacked_widget)
 
         self.setWidget(container)
 
@@ -1625,28 +1753,46 @@ class BirdIDDockWidget(QDockWidget):
         self.status_label.setStyleSheet(f"font-size: 11px; color: {COLORS['error']};")
     
     def on_result_card_clicked(self, rank: int):
-        """点击结果卡片，切换选中状态"""
-        # rank 从 1 开始，转为 0-based index
+        """点击结果卡片：切换选中状态 + 复制鸟名到剪贴板"""
         index = rank - 1
         if index < 0 or index >= len(self.result_cards):
             return
-        
-        # 取消之前选中的
+
+        # 切换选中状态
         if hasattr(self, 'result_cards'):
             for card in self.result_cards:
                 card.set_selected(False)
-        
-        # 选中当前点击的
         self.result_cards[index].set_selected(True)
         self.selected_index = index
-        
+
         # 更新状态标签
         self._update_status_label()
 
-        # 点击结果卡片时恢复 YOLO 裁剪预览
+        # 恢复 YOLO 裁剪预览
         if getattr(self, '_result_crop_pixmap', None):
             self._current_pixmap = self._result_crop_pixmap
             self._scale_preview()
+
+        # ── 复制鸟名到剪贴板 ──────────────────────────────────────
+        if hasattr(self, 'identify_results') and 0 <= index < len(self.identify_results):
+            result = self.identify_results[index]
+            is_en = self.i18n.current_lang.startswith('en')
+            bird_name = result.get('en_name', '') if is_en else result.get('cn_name', '')
+            if not bird_name:
+                bird_name = result.get('en_name', '') or result.get('cn_name', '')
+
+            QApplication.clipboard().setText(bird_name)
+
+            # 视觉反馈：卡片名称标签短暂变色
+            card = self.result_cards[index]
+            original_style = card.name_label.styleSheet()
+            card.name_label.setStyleSheet(f"""
+                font-size: 13px;
+                font-weight: 500;
+                color: {COLORS['accent']};
+                background: transparent;
+            """)
+            QTimer.singleShot(600, lambda: card.name_label.setStyleSheet(original_style))
 
     def _update_status_label(self):
         """更新状态标签，显示当前选中的候选"""
@@ -1657,6 +1803,377 @@ class BirdIDDockWidget(QDockWidget):
                 self.status_label.setStyleSheet(f"font-size: 11px; color: {COLORS['success']};")
 
 
+
+    def _switch_tab(self, index: int):
+        """切换标签页"""
+        if index == 0:
+            # 切换到鸟类识别
+            self.tab_identify.setChecked(True)
+            self.tab_identify.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {COLORS['accent']};
+                    color: {COLORS['bg_void']};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 12px;
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 1px;
+                }}
+                QPushButton:hover {{
+                    background-color: {COLORS['accent_hover']};
+                }}
+            """)
+            self.tab_search.setChecked(False)
+            self.tab_search.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {COLORS['text_tertiary']};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 12px;
+                    font-size: 11px;
+                    font-weight: 500;
+                }}
+                QPushButton:hover {{
+                    background-color: {COLORS['bg_card']};
+                    color: {COLORS['text_secondary']};
+                }}
+            """)
+            self.stacked_widget.setCurrentIndex(0)
+        else:
+            # 切换到查询鸟名
+            self.tab_search.setChecked(True)
+            self.tab_search.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {COLORS['accent']};
+                    color: {COLORS['bg_void']};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 12px;
+                    font-size: 11px;
+                    font-weight: 500;
+                }}
+                QPushButton:hover {{
+                    background-color: {COLORS['accent_hover']};
+                }}
+            """)
+            self.tab_identify.setChecked(False)
+            self.tab_identify.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {COLORS['text_tertiary']};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 12px;
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 1px;
+                }}
+                QPushButton:hover {{
+                    background-color: {COLORS['bg_card']};
+                    color: {COLORS['text_secondary']};
+                }}
+            """)
+            self.stacked_widget.setCurrentIndex(1)
+
+    def _take_screenshot(self):
+        """调用系统截图工具，截图后加载识别"""
+        if sys.platform == 'darwin':
+            self._take_screenshot_mac()
+        elif sys.platform == 'win32':
+            self._take_screenshot_win()
+
+    def _take_screenshot_mac(self):
+        """macOS: 隐藏主窗口后再启动 screencapture，避免覆盖层被遮挡
+        用 Popen 非阻塞启动，Qt 主线程轮询进程退出，避免阻塞事件循环"""
+        import tempfile
+
+        # 先检查屏幕录制权限：快速做一次非交互截图测试
+        import subprocess as _sp
+        _test_file = os.path.join(tempfile.gettempdir(), 'birdid_sc_test.png')
+        try:
+            _r = _sp.run(['screencapture', '-x', '-R', '0,0,1,1', _test_file],
+                         capture_output=True, timeout=5)
+            _test_ok = (_r.returncode == 0 and
+                        os.path.exists(_test_file) and
+                        os.path.getsize(_test_file) > 0)
+            if os.path.exists(_test_file):
+                os.remove(_test_file)
+        except Exception:
+            _test_ok = True  # 测试本身异常时不阻止，让后续截图自行处理
+
+        if not _test_ok:
+            print("[Screenshot] ⚠️ 屏幕录制权限未授予，显示提示")
+            from PySide6.QtWidgets import QMessageBox
+            is_en = self.i18n.current_lang.startswith('en')
+
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle(self.i18n.t("birdid.title"))
+
+            if is_en:
+                msg.setText("Screen Recording Access Needed")
+                msg.setInformativeText(
+                    "SuperPicky needs screen recording permission to capture screenshots.\n\n"
+                    "Tap \"Open Settings\" — find this app and flip the switch on.\n"
+                    "Then come back and try again!"
+                )
+                open_btn = msg.addButton("  Open Settings  ", QMessageBox.AcceptRole)
+                msg.addButton("Later", QMessageBox.RejectRole)
+            else:
+                msg.setText("需要屏幕录制权限")
+                msg.setInformativeText(
+                    "截图识鸟功能需要「屏幕录制」权限才能工作。\n\n"
+                    "点击下方按钮一键跳转设置页，为本应用开启权限后即可使用。"
+                )
+                open_btn = msg.addButton("  打开系统设置  ", QMessageBox.AcceptRole)
+                msg.addButton("稍后再说", QMessageBox.RejectRole)
+
+            msg.setStyleSheet(f"""
+                QMessageBox {{
+                    background-color: {COLORS['bg_elevated']};
+                    color: {COLORS['text_primary']};
+                }}
+                QLabel {{
+                    color: {COLORS['text_primary']};
+                    font-size: 13px;
+                }}
+                QPushButton {{
+                    background-color: {COLORS['bg_card']};
+                    color: {COLORS['text_primary']};
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 6px;
+                    padding: 6px 16px;
+                    font-size: 12px;
+                    min-width: 80px;
+                }}
+                QPushButton:hover {{
+                    background-color: {COLORS['accent']};
+                    color: {COLORS['bg_void']};
+                }}
+            """)
+            msg.exec()
+
+            if msg.clickedButton() == open_btn:
+                import subprocess as _open_sp
+                # macOS URL Scheme 直接跳转到「屏幕录制」权限页面
+                _open_sp.Popen([
+                    'open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+                ])
+            return
+        print("[Screenshot] ✅ 屏幕录制权限已授予")
+
+        self._sc_tmp_file = os.path.join(tempfile.gettempdir(), 'birdid_screenshot.png')
+        if os.path.exists(self._sc_tmp_file):
+            try:
+                os.remove(self._sc_tmp_file)
+            except Exception:
+                pass
+
+        # 找到顶层主窗口并隐藏，让 screencapture 覆盖层能正常显示
+        self._sc_main_win = self.window()
+        if self._sc_main_win:
+            self._sc_main_win.hide()
+
+        # 等待 300ms 让窗口动画完成后再启动截图
+        QTimer.singleShot(300, self._launch_screencapture_mac)
+
+    def _launch_screencapture_mac(self):
+        """延迟启动 screencapture（非阻塞）"""
+        import subprocess
+
+        print(f"[Screenshot] 启动 screencapture, 目标文件: {self._sc_tmp_file}")
+
+        try:
+            # 非阻塞启动 — Qt 事件循环继续运行，screencapture UI 才能正常显示
+            self._sc_proc = subprocess.Popen(
+                ['screencapture', '-i', '-s', self._sc_tmp_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            print(f"[Screenshot] screencapture 进程已启动, PID: {self._sc_proc.pid}")
+        except FileNotFoundError:
+            # screencapture 不可用，恢复窗口
+            if getattr(self, '_sc_main_win', None):
+                self._sc_main_win.show()
+                self._sc_main_win.raise_()
+            self._show_screenshot_error("screencapture 不可用")
+            return
+
+        # 停止上次残留的轮询
+        if hasattr(self, '_sc_poll_timer') and self._sc_poll_timer is not None:
+            self._sc_poll_timer.stop()
+
+        # 轮询进程退出，每 200ms 检查一次，最多等待 120 秒
+        self._sc_poll_count = 0
+        self._sc_poll_timer = QTimer(self)
+        self._sc_poll_timer.timeout.connect(self._poll_screencapture_done)
+        self._sc_poll_timer.start(200)
+
+    def _poll_screencapture_done(self):
+        """轮询 screencapture 进程是否退出"""
+        self._sc_poll_count += 1
+
+        # 超时保护（120 秒）
+        if self._sc_poll_count > 600:
+            print("[Screenshot] ⚠️ 超时 (120s)，停止轮询")
+            self._sc_poll_timer.stop()
+            if getattr(self, '_sc_main_win', None):
+                self._sc_main_win.show()
+                self._sc_main_win.raise_()
+            return
+
+        if not hasattr(self, '_sc_proc') or self._sc_proc is None:
+            self._sc_poll_timer.stop()
+            return
+
+        if self._sc_proc.poll() is not None:
+            # 进程已退出
+            rc = self._sc_proc.returncode
+            stdout_data = self._sc_proc.stdout.read().decode('utf-8', errors='replace') if self._sc_proc.stdout else ''
+            stderr_data = self._sc_proc.stderr.read().decode('utf-8', errors='replace') if self._sc_proc.stderr else ''
+            print(f"[Screenshot] screencapture 退出, returncode={rc}")
+            if stdout_data.strip():
+                print(f"[Screenshot] stdout: {stdout_data.strip()}")
+            if stderr_data.strip():
+                print(f"[Screenshot] stderr: {stderr_data.strip()}")
+
+            self._sc_poll_timer.stop()
+            self._sc_proc = None
+
+            # 先恢复主窗口
+            main_win = getattr(self, '_sc_main_win', None)
+            if main_win:
+                main_win.show()
+                main_win.raise_()
+                main_win.activateWindow()
+
+            # 用户取消时不会生成文件
+            file_exists = os.path.exists(self._sc_tmp_file)
+            if file_exists:
+                file_size = os.path.getsize(self._sc_tmp_file)
+                print(f"[Screenshot] ✅ 截图文件存在, 大小: {file_size} bytes, 路径: {self._sc_tmp_file}")
+                if file_size > 0:
+                    # 稍等 100ms 让窗口完全显示后再加载
+                    QTimer.singleShot(100, lambda: self.on_file_dropped(self._sc_tmp_file))
+                else:
+                    print("[Screenshot] ⚠️ 截图文件为空 (0 bytes)，可能缺少屏幕录制权限")
+                    self._show_screenshot_error("截图文件为空，请检查系统偏好设置 > 隐私与安全 > 屏幕录制 权限")
+            else:
+                print(f"[Screenshot] ❌ 截图文件不存在 (用户可能取消了截图)")
+                # 列出临时目录中的相关文件用于调试
+                import glob
+                tmp_dir = os.path.dirname(self._sc_tmp_file)
+                related = glob.glob(os.path.join(tmp_dir, 'birdid_*'))
+                if related:
+                    print(f"[Screenshot] 临时目录中的相关文件: {related}")
+
+    def _load_screenshot_from_clipboard(self):
+        """从剪贴板读取截图并保存为临时文件（Windows 模式备用）"""
+        import tempfile
+        clipboard = QApplication.clipboard()
+        image = clipboard.image()
+        if image is None or image.isNull():
+            return
+        tmp_file = os.path.join(tempfile.gettempdir(), 'birdid_screenshot.png')
+        if image.save(tmp_file, 'PNG'):
+            self.on_file_dropped(tmp_file)
+        else:
+            self._show_screenshot_error("截图保存失败")
+
+    def _show_screenshot_error(self, msg: str):
+        """显示截图错误提示"""
+        self.status_label.setText(msg)
+        self.status_label.setStyleSheet(f"font-size: 11px; color: {COLORS['error']};")
+        self.status_label.show()
+
+
+
+    def _take_screenshot_win(self):
+        """Windows: 隐藏主窗口后发送 Win+Shift+S，轮询剪贴板等待图像"""
+        # 先清空剪贴板
+        try:
+            QApplication.clipboard().clear()
+        except Exception:
+            pass
+
+        # 隐藏主窗口
+        self._sc_main_win = self.window()
+        if self._sc_main_win:
+            self._sc_main_win.hide()
+
+        # 等待 300ms 让窗口动画完成后再发送快捷键
+        QTimer.singleShot(300, self._launch_snip_win)
+
+    def _launch_snip_win(self):
+        """发送 Win+Shift+S 唤起截图工具"""
+        import ctypes
+
+        KEYEVENTF_KEYUP = 0x0002
+        VK_LWIN  = 0x5B
+        VK_SHIFT = 0x10
+        VK_S     = 0x53
+
+        keybd = ctypes.windll.user32.keybd_event
+        try:
+            keybd(VK_LWIN,  0, 0, 0)
+            keybd(VK_SHIFT, 0, 0, 0)
+            keybd(VK_S,     0, 0, 0)
+            keybd(VK_S,     0, KEYEVENTF_KEYUP, 0)
+            keybd(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0)
+            keybd(VK_LWIN,  0, KEYEVENTF_KEYUP, 0)
+        except Exception as e:
+            # 发送失败，直接恢复窗口
+            self._restore_win_window()
+            self.status_label.setText(f"截图快捷键发送失败: {e}")
+            self.status_label.setStyleSheet(f"font-size: 11px; color: {COLORS['error']};")
+            return
+
+        # 轮询剪贴板，每 500ms 检查一次
+        self._screenshot_poll_count = 0
+        self._screenshot_timer = QTimer(self)
+        self._screenshot_timer.timeout.connect(self._poll_clipboard_for_screenshot)
+        self._screenshot_timer.start(500)
+
+    def _restore_win_window(self):
+        """恢复 Windows 主窗口"""
+        main_win = getattr(self, '_sc_main_win', None)
+        if main_win:
+            main_win.show()
+            main_win.raise_()
+            main_win.activateWindow()
+
+    def _poll_clipboard_for_screenshot(self):
+        """轮询剪贴板，检测到图像后恢复窗口并加载"""
+        import tempfile
+
+        self._screenshot_poll_count += 1
+
+        # 超时 60 秒自动放弃
+        if self._screenshot_poll_count > 120:
+            self._screenshot_timer.stop()
+            self._restore_win_window()
+            return
+
+        clipboard = QApplication.clipboard()
+        mime = clipboard.mimeData()
+
+        if mime and mime.hasImage():
+            self._screenshot_timer.stop()
+
+            image = clipboard.image()
+            if image.isNull():
+                self._restore_win_window()
+                return
+
+            tmp_file = os.path.join(tempfile.gettempdir(), 'birdid_screenshot.png')
+            if image.save(tmp_file, 'PNG'):
+                # 先恢复窗口，再加载图片
+                self._restore_win_window()
+                QTimer.singleShot(100, lambda: self.on_file_dropped(tmp_file))
+            else:
+                self._restore_win_window()
 
     def reset_view(self):
         """重置视图"""

@@ -43,11 +43,11 @@ from ui.skill_level_dialog import SkillLevelDialog, SKILL_PRESETS, get_skill_lev
 class DropLineEdit(QLineEdit):
     """支持拖放目录的 QLineEdit"""
     pathDropped = Signal(str)  # 拖放目录后发射此信号
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-    
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         """验证拖入的内容"""
         if event.mimeData().hasUrls():
@@ -58,7 +58,7 @@ class DropLineEdit(QLineEdit):
                     event.acceptProposedAction()
                     return
         event.ignore()
-    
+
     def dropEvent(self, event: QDropEvent):
         """处理拖放"""
         urls = event.mimeData().urls()
@@ -340,35 +340,159 @@ class WorkerThread(threading.Thread):
             crop_preview=crop_preview_callback
         )
 
-        processor = PhotoProcessor(
-            dir_path=self.dir_path,
-            settings=settings,
-            callbacks=callbacks
-        )
+        # Detect batch mode: check for subdirectories with photos
+        from core.recursive_scanner import scan_recursive, has_photos
+        sub_dirs = scan_recursive(self.dir_path, max_depth=5)
 
-        # V4.0.5: 读取 keep_temp_files 配置，决定是否清理临时文件
-        from advanced_config import get_advanced_config
-        adv_config = get_advanced_config()
-        
-        result = processor.process(
-            organize_files=True,
-            cleanup_temp=not adv_config.keep_temp_files
-        )
+        if len(sub_dirs) <= 1:
+            # Single directory mode (original behavior)
+            processor = PhotoProcessor(
+                dir_path=self.dir_path,
+                settings=settings,
+                callbacks=callbacks
+            )
 
-        # V4.0.4: 连拍检测已移至 PhotoProcessor 内部
-        # 直接读取统计信息并显示
-        burst_groups = result.stats.get('burst_groups', 0)
-        burst_moved = result.stats.get('burst_moved', 0)
-        
-        if burst_groups > 0:
-            log_callback(self.i18n.t("logs.burst_complete", groups=burst_groups, moved=burst_moved), "success")
-        elif settings.detect_burst:
-            log_callback(self.i18n.t("logs.burst_none_detected"), "info")
+            from advanced_config import get_advanced_config
+            adv_config = get_advanced_config()
 
-        self.stats = result.stats
+            result = processor.process(
+                organize_files=True,
+                cleanup_temp=not adv_config.keep_temp_files
+            )
+
+            burst_groups = result.stats.get('burst_groups', 0)
+            burst_moved = result.stats.get('burst_moved', 0)
+
+            if burst_groups > 0:
+                log_callback(self.i18n.t("logs.burst_complete", groups=burst_groups, moved=burst_moved), "success")
+            elif settings.detect_burst:
+                log_callback(self.i18n.t("logs.burst_none_detected"), "info")
+
+            self.stats = result.stats
+        else:
+            # Batch mode: process each subdirectory
+            from advanced_config import get_advanced_config
+            adv_config = get_advanced_config()
+
+            log_callback(f"\n{'='*56}", "info")
+            log_callback(f"  \U0001f4c2 Batch mode: {len(sub_dirs)} directories detected", "info")
+            log_callback(f"{'='*56}", "info")
+
+            # Count total photos across all dirs for progress
+            from constants import IMAGE_EXTENSIONS
+            _photo_exts = set(e.lower() for e in IMAGE_EXTENSIONS)
+            total_all = 0
+            dir_photo_counts = {}
+            for d in sub_dirs:
+                count = 0
+                for f in os.listdir(d):
+                    if os.path.splitext(f)[1].lower() in _photo_exts:
+                        count += 1
+                dir_photo_counts[d] = count
+                total_all += count
+
+            processed_so_far = 0
+            aggregated = {
+                'total': 0, 'star_3': 0, 'picked': 0, 'star_2': 0,
+                'star_1': 0, 'star_0': 0, 'no_bird': 0,
+                'start_time': 0, 'end_time': 0, 'total_time': 0,
+                'flying': 0, 'focus_precise': 0, 'exposure_issue': 0,
+                'burst_groups': 0, 'burst_moved': 0,
+                'bird_species': [],
+            }
+            import time as _time
+            aggregated['start_time'] = _time.time()
+
+            for idx, sub_dir in enumerate(sub_dirs, 1):
+                rel = os.path.relpath(sub_dir, self.dir_path)
+                n_photos = dir_photo_counts.get(sub_dir, 0)
+                if n_photos == 0:
+                    continue
+
+                log_callback(f"\n{'_'*40}", "info")
+                log_callback(f"\U0001f4c1 [{idx}/{len(sub_dirs)}] {rel}/ ({n_photos} photos)", "info")
+                log_callback(f"{'_'*40}", "info")
+
+                # Wrap progress to map sub-dir progress to global progress
+                dir_base = processed_so_far
+                dir_count = n_photos
+
+                def make_progress_cb(base, count):
+                    def _progress(val):
+                        if total_all > 0:
+                            global_pct = (base + count * val / 100.0) / total_all * 100
+                            self.signals.progress.emit(int(global_pct))
+                    return _progress
+
+                sub_callbacks = ProcessingCallbacks(
+                    log=log_callback,
+                    progress=make_progress_cb(dir_base, dir_count),
+                    crop_preview=crop_preview_callback
+                )
+
+                processor = PhotoProcessor(
+                    dir_path=sub_dir,
+                    settings=settings,
+                    callbacks=sub_callbacks
+                )
+
+                try:
+                    result = processor.process(
+                        organize_files=True,
+                        cleanup_temp=not adv_config.keep_temp_files
+                    )
+                    s = result.stats
+                    for key in ('total', 'star_3', 'picked', 'star_2', 'star_1',
+                                'star_0', 'no_bird', 'flying', 'focus_precise',
+                                'exposure_issue', 'burst_groups', 'burst_moved'):
+                        aggregated[key] = aggregated.get(key, 0) + s.get(key, 0)
+                    aggregated['bird_species'].extend(s.get('bird_species', []))
+
+                    r3 = s.get('star_3', 0)
+                    r2 = s.get('star_2', 0)
+                    r1 = s.get('star_1', 0)
+                    r0 = s.get('star_0', 0)
+                    nb = s.get('no_bird', 0)
+                    tt = s.get('total_time', 0)
+                    log_callback(
+                        f"  \u2705 Done ({tt:.1f}s): "
+                        f"3\u2605={r3} 2\u2605={r2} 1\u2605={r1} 0\u2605={r0} no_bird={nb}",
+                        "success"
+                    )
+                except Exception as e:
+                    log_callback(f"  \u274c Error: {e}", "error")
+
+                processed_so_far += dir_count
+
+            aggregated['end_time'] = _time.time()
+            aggregated['total_time'] = aggregated['end_time'] - aggregated['start_time']
+            if aggregated['total'] > 0:
+                aggregated['avg_time'] = aggregated['total_time'] / aggregated['total']
+            else:
+                aggregated['avg_time'] = 0
+
+            # Deduplicate bird species
+            seen = set()
+            unique_species = []
+            for sp in aggregated['bird_species']:
+                key = str(sp)
+                if key not in seen:
+                    seen.add(key)
+                    unique_species.append(sp)
+            aggregated['bird_species'] = unique_species
+
+            log_callback(f"\n{'='*56}", "info")
+            log_callback(
+                f"  \U0001f4ca Batch complete: {len(sub_dirs)} dirs, "
+                f"{aggregated['total']} photos, {aggregated['total_time']:.1f}s",
+                "success"
+            )
+            log_callback(f"{'='*56}", "info")
+
+            self.stats = aggregated
 
         # ── 写会话结束摘要到日志文件 ──────────────────────────
-        _s = result.stats
+        _s = self.stats
         _total    = _s.get('total', 0)
         _star_3   = _s.get('star_3', 0)
         _star_2   = _s.get('star_2', 0)
@@ -566,8 +690,6 @@ class SuperPickyMainWindow(QMainWindow):
 
         # 识鸟菜单
         birdid_menu = menubar.addMenu(self.i18n.t("menu.birdid"))
-        
-
 
         # 识鸟面板（可勾选显示/隐藏）
         self.birdid_dock_action = QAction(self.i18n.t("menu.toggle_dock"), self)
@@ -575,8 +697,10 @@ class SuperPickyMainWindow(QMainWindow):
         self.birdid_dock_action.setChecked(True)
         self.birdid_dock_action.triggered.connect(self._toggle_birdid_dock)
         birdid_menu.addAction(self.birdid_dock_action)
-        
 
+        # ── 最近目录子菜单 ──────────────────────────────────
+        self._recent_menu = menubar.addMenu(self.i18n.t("menu.recent_dirs"))
+        self._refresh_recent_menu()
 
         # 设置菜单
         settings_menu = menubar.addMenu(self.i18n.t("menu.settings_menu"))
@@ -626,6 +750,38 @@ class SuperPickyMainWindow(QMainWindow):
         about_action = QAction(self.i18n.t("menu.about"), self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
+
+    def _refresh_recent_menu(self):
+        """重建「最近目录」子菜单内容（每次选目录后调用）。"""
+        if not hasattr(self, '_recent_menu'):
+            return
+        self._recent_menu.clear()
+        dirs = self.config.get_recent_directories()
+        offline_prefix = self.i18n.t("menu.recent_dirs_offline")  # "(脱机)" or "(Offline)"
+        if dirs:
+            for d in dirs:
+                available = os.path.isdir(d)
+                label = d if available else f"{offline_prefix} {d}"
+                action = QAction(label, self)
+                if available:
+                    action.triggered.connect(lambda checked=False, path=d: self._handle_directory_selection(path))
+                else:
+                    action.triggered.connect(
+                        lambda checked=False, msg=self.i18n.t("messages.dir_unavailable"):
+                        self._show_message(self.i18n.t("messages.warning"), msg, "warning")
+                    )
+                self._recent_menu.addAction(action)
+            self._recent_menu.addSeparator()
+        # 清除历史按钮
+        clear_action = QAction(self.i18n.t("menu.recent_dirs_clear"), self)
+        clear_action.triggered.connect(self._clear_recent_directories)
+        self._recent_menu.addAction(clear_action)
+
+    def _clear_recent_directories(self):
+        """清空最近目录历史。"""
+        self.config.config["recent_directories"] = []
+        self.config.save()
+        self._refresh_recent_menu()
 
     def _setup_ui(self):
         """设置主 UI"""
@@ -928,7 +1084,6 @@ class SuperPickyMainWindow(QMainWindow):
 
     def _create_directory_section(self, parent_layout):
         """创建目录选择区域"""
-        # 输入区域
         dir_layout = QHBoxLayout()
         dir_layout.setSpacing(8)
 
@@ -937,7 +1092,7 @@ class SuperPickyMainWindow(QMainWindow):
         self.dir_input.setPlaceholderText(self.i18n.t("labels.dir_placeholder"))
         self.dir_input.returnPressed.connect(self._on_path_entered)
         self.dir_input.editingFinished.connect(self._on_path_entered)  # V3.9: 失焦时也验证
-        self.dir_input.pathDropped.connect(self._on_path_dropped)  # V3.9: 拖放目录
+        self.dir_input.pathDropped.connect(self._on_path_dropped)     # V3.9: 拖放目录
         dir_layout.addWidget(self.dir_input, 1)
 
         browse_btn = QPushButton(self.i18n.t("labels.browse"))
@@ -1296,6 +1451,10 @@ class SuperPickyMainWindow(QMainWindow):
         self.dir_input.setText(directory)
 
         self._log(self.i18n.t("messages.dir_selected", directory=directory))
+
+        # 写入最近目录历史并刷新菜单
+        self.config.add_recent_directory(directory)
+        self._refresh_recent_menu()
 
         # 状态条 + 按钮由 _check_report_csv 根据是否有历史数据决定
         # 重置弹窗移到「重新处理」按钮点击时再询问（_reset_directory 保留确认逻辑）
@@ -1777,8 +1936,41 @@ class SuperPickyMainWindow(QMainWindow):
                 import shutil
 
                 exiftool_mgr = get_exiftool_manager()
-                
-                # V4.0.5: 先清理所有子目录（burst_XXX、鸟种目录等）
+
+                # Batch mode: reset processed subdirectories first (deepest first)
+                from core.recursive_scanner import is_processed
+                sub_dirs_to_reset = []
+                for root_d, subdirs, files in os.walk(directory_path):
+                    subdirs[:] = [d for d in subdirs if not d.startswith('.')]
+                    from constants import RATING_FOLDER_NAMES, RATING_FOLDER_NAMES_EN
+                    star_names = set(RATING_FOLDER_NAMES.values()) | set(RATING_FOLDER_NAMES_EN.values())
+                    subdirs[:] = [d for d in subdirs if d not in star_names and not d.startswith('burst_')]
+                    for d in subdirs:
+                        full = os.path.join(root_d, d)
+                        if is_processed(full):
+                            sub_dirs_to_reset.append(full)
+
+                if sub_dirs_to_reset:
+                    # Reset deepest first
+                    sub_dirs_to_reset.sort(key=lambda p: p.count(os.sep), reverse=True)
+                    emit_log(f"\n\U0001f4c2 Batch reset: {len(sub_dirs_to_reset)} subdirectories")
+                    for idx, sub_dir in enumerate(sub_dirs_to_reset, 1):
+                        rel = os.path.relpath(sub_dir, directory_path)
+                        emit_log(f"\n\U0001f504 [{idx}/{len(sub_dirs_to_reset)}] {rel}/")
+                        try:
+                            # Reuse CLI reset logic
+                            class _ResetArgs:
+                                pass
+                            _args = _ResetArgs()
+                            _args.directory = sub_dir
+                            _args.yes = True
+                            from superpicky_cli import cmd_reset as _cli_reset
+                            _cli_reset(_args)
+                            emit_log(f"  \u2705 {rel}/ reset done")
+                        except Exception as e:
+                            emit_log(f"  \u274c {rel}/ reset failed: {e}")
+
+                # Now reset the root directory
                 emit_log(i18n.t("logs.reset_step0"))
                 rating_dirs = ['3star_excellent', '2star_good', '1star_average', '0star_reject',
                                '3星_优选', '2星_良好', '1星_普通', '0星_放弃']

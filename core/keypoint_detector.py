@@ -78,11 +78,11 @@ class KeypointDetector:
         import sys
         if hasattr(sys, '_MEIPASS'):
             # PyInstaller 打包后的路径
-            return os.path.join(sys._MEIPASS, 'models', 'cub200_keypoint_resnet50.pth')
+            return os.path.join(sys._MEIPASS, 'models', 'cub200_keypoint_resnet50_slim.pth')
         else:
             # 开发环境：从当前文件向上找项目根目录
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            return os.path.join(project_root, 'models', 'cub200_keypoint_resnet50.pth')
+            return os.path.join(project_root, 'models', 'cub200_keypoint_resnet50_slim.pth')
     
     def __init__(self, model_path: str = None):
         """

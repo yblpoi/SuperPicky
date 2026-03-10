@@ -2,7 +2,7 @@
   "_meta": {
     "language_name": "English",
     "language_code": "en_US",
-    "version": "4.1.0"
+    "version": "4.2.0"
   },
   "app": {
     "title": "SuperPicky - AI Bird Photo Culling Tool v{version} ({hash})",
@@ -30,7 +30,10 @@
     "background_mode_title": "Background Mode",
     "background_mode_msg": "App will enter background mode\n\n• Bird ID service continues running\n• Lightroom plugin works normally\n• Reopen app to restore interface\n\nNote: Server uses ~250MB memory",
     "view_results": "View Results",
-    "results_browser": "Photo Browser"
+    "results_browser": "Photo Browser",
+    "recent_dirs": "Recent Folders",
+    "recent_dirs_clear": "Clear History",
+    "recent_dirs_offline": "(Offline)"
   },
   "buttons": {
     "select_dir": "📁 Select Source Folder",
@@ -134,7 +137,8 @@
     "files_restored": "Files restored: {count}",
     "exif_reset_count": "EXIF reset: {count}",
     "ready_for_analysis": "Ready for new analysis",
-    "reset_failed_log": "Reset failed"
+    "reset_failed_log": "Reset failed",
+    "dir_unavailable": "Folder unavailable. Please make sure the external drive is connected."
   },
   "logs": {
     "reset_start": "🔄 Starting directory reset",
@@ -896,6 +900,9 @@
     "stats_complete": "Analysis Complete  |  {total} photos  |  {time_min:.1f} min",
     "stats_flying": "🔵 Flying: {count}",
     "stats_focus_precise": "🟢 Precise Focus: {count}",
+    "btn_screenshot": "Screenshot",
+    "screenshot_hint": "Take a screenshot to identify...",
+    "click_to_copy": "Click to copy name",
     "stats_species": "🦜 {count} species: {names}"
   },
   "cli": {
