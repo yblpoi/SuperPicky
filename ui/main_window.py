@@ -939,6 +939,15 @@ class SuperPickyMainWindow(QMainWindow):
         Mac 和 Windows 均适用。
         """
         self._stop_birdid_server()        # 停止 Flask/BirdID 进程
+        
+        # 清理 ExifTool 进程
+        try:
+            from tools.exiftool_manager import get_exiftool_manager
+            exiftool_mgr = get_exiftool_manager()
+            exiftool_mgr.shutdown()
+        except Exception as e:
+            print(f"⚠️  ExifTool cleanup failed: {e}")
+            
         if hasattr(self, 'tray_icon') and self.tray_icon:
             self.tray_icon.hide()         # 清托盘图标（备用，_quit_app 已调过一次也无害）
 

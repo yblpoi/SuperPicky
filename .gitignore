@@ -52,6 +52,7 @@ ebird_cache/
 
 # 虚拟环境
 .venv/
+.venv-cuda/
 venv/
 
 # 模型文件（临时模型不上传，基础模型需要上传）

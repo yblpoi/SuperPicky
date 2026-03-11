@@ -1,4 +1,4 @@
-name: Build and Release SuperPicky
+name: Build and Release SuperPicky CUDA Patch
 
 on:
   push:
@@ -27,45 +27,56 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: Create and activate virtual environment
+    - name: Create Cuda Virtual Environment
       run: |
-        python -m venv .venv
-        .venv\Scripts\Activate.ps1
- 
-    - name: Install dependencies
-      run: |
-        .venv\Scripts\Activate.ps1
+        python -m venv .venv-cuda  
+        .venv-cuda\Scripts\Activate.ps1
         pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-    
-    - name: Download Model
-      run: |
-        .venv\Scripts\Activate.ps1
-        python scripts\download_models.py
+        pip install -r requirements_cuda.txt
+        pip install pyinstaller lap
         
     - name: Update version For Inno Setup
       run: |
-        .venv\Scripts\Activate.ps1
+        .venv-cuda\Scripts\Activate.ps1
         python scripts\update_inno_version.py 
         
+    - name: Build CUDA version
+      run: |
+        .venv-cuda\Scripts\Activate.ps1
+        .\build_release_cuda.bat
+
+    - name: DEL CUDA Virtual Environment
+      run: |
+        Remove-Item -Path .venv-cuda -Recurse -Force -ErrorAction Ignore
+
+    - name: Create CPU Virtual Environment
+      run: |
+        python -m venv .venv  
+        .venv\Scripts\Activate.ps1
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller lap
+    
     - name: Build CPU version
       run: |
         .venv\Scripts\Activate.ps1
         .\build_release_cpu.bat
 
-    - name: Create installer with Inno Setup
+    - name: Create Cuda Patch
+      run: |
+        .venv\Scripts\Activate.ps1
+        python scripts\Create_cuda_patch.py   
+
+    - name: Create Patch installer with Inno Setup
       uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
       with:
-        path: ./output/SuperPicky_Win64_CPU/SuperPicky.iss
+        path: ./output/cuda_patch/SuperPicky_CUDA_Patch.iss
 
     - name: Prepare release assets
       run: |
         $version = "${{ github.event.inputs.version || github.ref_name }}".TrimStart('v')
         New-Item -ItemType Directory -Path release_assets -Force
-        # Copy-Item -Path output/SuperPicky_Win64_CPU.zip -Destination release_assets\
-        # 查找Inno Setup生成的安装包
-        Get-ChildItem -Path output -Recurse -Filter "SuperPicky_Setup_Win64*.exe" | ForEach-Object {
+        Get-ChildItem -Path output -Recurse -Filter "SuperPicky_CUDA_Patch_Win64*.exe" | ForEach-Object {
           Copy-Item -Path $_.FullName -Destination release_assets\
         }
 

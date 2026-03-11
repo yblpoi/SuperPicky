@@ -13,7 +13,7 @@ set "ZIP_COPY_DIR="
 
 if "!OUT_DIST_DIR!"=="" set "OUT_DIST_DIR=dist"
 
-set "BUILD_ZIP=1"
+set "BUILD_ZIP=0"
 
 call :parse_args %*
 if errorlevel 1 exit /b 1
@@ -70,7 +70,6 @@ if exist "%ROOT_DIR%\build_dist_cuda" rd /s /q "%ROOT_DIR%\build_dist_cuda" >nul
 if exist "%ROOT_DIR%\dist" rd /s /q "%ROOT_DIR%\dist" >nul 2>&1
 if exist "%ROOT_DIR%\dist_cpu" rd /s /q "%ROOT_DIR%\dist_cpu" >nul 2>&1
 if exist "%ROOT_DIR%\dist_cuda" rd /s /q "%ROOT_DIR%\dist_cuda" >nul 2>&1
-if exist "%ROOT_DIR%\output" rd /s /q "%ROOT_DIR%\output" >nul 2>&1
 
 echo [SUCCESS] Cleaned old build files
 
@@ -119,8 +118,8 @@ echo [========================================]
 
 set "COMMIT_HASH=unknown"
 rem 优先从 Python 代码读取 COMMIT_HASH（保证跨平台一致）
-for /f "tokens=*" %%i in ('"%PYTHON_EXE%" -c "exec('try:\n from core.build_info_local import COMMIT_HASH\nexcept ImportError:\n from core.build_info import COMMIT_HASH\nprint(COMMIT_HASH or chr(0))')" 2^>nul') do set "COMMIT_HASH=%%i"
-if "%COMMIT_HASH%"=="" for /f "tokens=*" %%i in ('git rev-parse --short HEAD 2^>nul') do set "COMMIT_HASH=%%i"
+for /f "tokens=*" %%i in ('git rev-parse --short HEAD 2^>nul') do set "COMMIT_HASH=%%i"
+if "%COMMIT_HASH%"=="" for /f "tokens=*" %%i in ('"%PYTHON_EXE%" -c "exec('try:\n from core.build_info_local import COMMIT_HASH\nexcept ImportError:\n from core.build_info import COMMIT_HASH\nprint(COMMIT_HASH or chr(0))')" 2^>nul') do set "COMMIT_HASH=%%i"
 if "%COMMIT_HASH%"=="" set "COMMIT_HASH=unknown"
 echo [INFO] Commit hash: %COMMIT_HASH%
 
@@ -278,72 +277,56 @@ if "%BUILD_ZIP%"=="1" (
     if exist "%INNO_DIR%\ChineseSimplified.isl" (
         copy /y "%INNO_DIR%\ChineseSimplified.isl" "!DIST_DIR!\!APP_NAME!\ChineseSimplified.isl" >nul
     )
-    
-    if defined ZIP_COPY_DIR (
-        set "TARGET_SUBDIR=%APP_NAME%_!VERSION!"
-        set "TARGET_DIR=!ZIP_COPY_DIR!\!TARGET_SUBDIR!"
-        if not exist "!ZIP_COPY_DIR!" mkdir "!ZIP_COPY_DIR!"
-        if errorlevel 1 (
-            echo [ERROR] Failed to create copy root dir: !ZIP_COPY_DIR!
-            exit /b 1
-        )
-        if exist "!TARGET_DIR!" rd /s /q "!TARGET_DIR!"
-        if exist "!TARGET_DIR!" (
-            echo [ERROR] Failed to clean old target dir: !TARGET_DIR!
-            exit /b 1
-        )
-        call :copy_dir "%DIST_DIR%\%APP_NAME%" "!TARGET_DIR!"
-        if errorlevel 1 exit /b 1
-        
-        rem Copy Inno Setup files to target directory
-        if exist "%INNO_DIR%\SuperPicky.iss" (
-            copy /y "%INNO_DIR%\SuperPicky.iss" "!TARGET_DIR!\SuperPicky.iss" >nul
-            if errorlevel 1 (
-                echo [ERROR] Failed to copy SuperPicky.iss to target directory
-                exit /b 1
-            )
-            echo [SUCCESS] Copied SuperPicky.iss to !TARGET_DIR!
-            
-            rem Update version in iss file
-            powershell -NoProfile -Command "(Get-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Raw -Encoding UTF8) -replace 'VersionInfoVersion=.*', 'VersionInfoVersion=!VERSION!' | Set-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Encoding UTF8"
-            if errorlevel 1 (
-                echo [ERROR] Failed to update version in SuperPicky.iss in target directory
-                exit /b 1
-            )
-            echo [SUCCESS] Updated version in SuperPicky.iss to !VERSION! in target directory
-        )
-        
-        if exist "%INNO_DIR%\ChineseSimplified.isl" (
-            copy /y "%INNO_DIR%\ChineseSimplified.isl" "!TARGET_DIR!\ChineseSimplified.isl" >nul
-            if errorlevel 1 (
-                echo [ERROR] Failed to copy ChineseSimplified.isl to target directory
-                exit /b 1
-            )
-            echo [SUCCESS] Copied ChineseSimplified.isl to !TARGET_DIR!
-        )
-        
-        rem Remove Inno Setup files before creating zip
-        if exist "!TARGET_DIR!\SuperPicky.iss" del /q "!TARGET_DIR!\SuperPicky.iss" >nul 2>&1
-        if exist "!TARGET_DIR!\ChineseSimplified.isl" del /q "!TARGET_DIR!\ChineseSimplified.isl" >nul 2>&1
-        
-        call :zip_dir "!TARGET_DIR!" "!ZIP_COPY_DIR!\!TARGET_SUBDIR!.zip"
-        if errorlevel 1 exit /b 1
-        
-        rem Restore Inno Setup files after creating zip
-        if exist "%INNO_DIR%\SuperPicky.iss" (
-            copy /y "%INNO_DIR%\SuperPicky.iss" "!TARGET_DIR!\SuperPicky.iss" >nul
-            rem Update version in iss file
-            powershell -NoProfile -Command "(Get-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Raw -Encoding UTF8) -replace 'VersionInfoVersion=.*', 'VersionInfoVersion=!VERSION!' | Set-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Encoding UTF8"
-        )
-        if exist "%INNO_DIR%\ChineseSimplified.isl" (
-            copy /y "%INNO_DIR%\ChineseSimplified.isl" "!TARGET_DIR!\ChineseSimplified.isl" >nul
-        )
-        
-        echo [SUCCESS] Copied !TARGET_SUBDIR! + created !ZIP_COPY_DIR!\!TARGET_SUBDIR!.zip
-    )
 ) else (
     set "ZIP_NAME="
     echo [INFO] ZIP creation skipped ^(--no-zip^)
+)
+
+rem Copy to ZIP_COPY_DIR if specified, regardless of BUILD_ZIP
+if defined ZIP_COPY_DIR (
+    set "TARGET_SUBDIR=%APP_NAME%_!VERSION!"
+    set "TARGET_DIR=!ZIP_COPY_DIR!\!TARGET_SUBDIR!"
+    if not exist "!ZIP_COPY_DIR!" mkdir "!ZIP_COPY_DIR!"
+    if errorlevel 1 (
+        echo [ERROR] Failed to create copy root dir: !ZIP_COPY_DIR!
+        exit /b 1
+    )
+    if exist "!TARGET_DIR!" rd /s /q "!TARGET_DIR!"
+    if exist "!TARGET_DIR!" (
+        echo [ERROR] Failed to clean old target dir: !TARGET_DIR!
+        exit /b 1
+    )
+    call :copy_dir "%DIST_DIR%\%APP_NAME%" "!TARGET_DIR!"
+    if errorlevel 1 exit /b 1
+    
+    rem Copy Inno Setup files to target directory
+    if exist "%INNO_DIR%\SuperPicky.iss" (
+        copy /y "%INNO_DIR%\SuperPicky.iss" "!TARGET_DIR!\SuperPicky.iss" >nul
+        if errorlevel 1 (
+            echo [ERROR] Failed to copy SuperPicky.iss to target directory
+            exit /b 1
+        )
+        echo [SUCCESS] Copied SuperPicky.iss to !TARGET_DIR!
+        
+        rem Update version in iss file
+        powershell -NoProfile -Command "(Get-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Raw -Encoding UTF8) -replace 'VersionInfoVersion=.*', 'VersionInfoVersion=!VERSION!' | Set-Content -Path '!TARGET_DIR!\SuperPicky.iss' -Encoding UTF8"
+        if errorlevel 1 (
+            echo [ERROR] Failed to update version in SuperPicky.iss in target directory
+            exit /b 1
+        )
+        echo [SUCCESS] Updated version in SuperPicky.iss to !VERSION! in target directory
+    )
+    
+    if exist "%INNO_DIR%\ChineseSimplified.isl" (
+        copy /y "%INNO_DIR%\ChineseSimplified.isl" "!TARGET_DIR!\ChineseSimplified.isl" >nul
+        if errorlevel 1 (
+            echo [ERROR] Failed to copy ChineseSimplified.isl to target directory
+            exit /b 1
+        )
+        echo [SUCCESS] Copied ChineseSimplified.isl to !TARGET_DIR!
+    )
+    
+    echo [SUCCESS] Copied !TARGET_SUBDIR! to !ZIP_COPY_DIR!
 )
 
 echo.
