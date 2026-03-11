@@ -47,6 +47,8 @@ all_datas = [
     (os.path.join(base_path, 'birdid/data'), 'birdid/data'),
     # V4.0.0: Lightroom 插件
     (os.path.join(base_path, 'SuperBirdIDPlugin.lrplugin'), 'SuperBirdIDPlugin.lrplugin'),
+    # V4.2.x: 鸟名查询数据库 (ioc/birdname.db)
+    (os.path.join(base_path, 'ioc'), 'ioc'),
 ]
 
 # 添加动态收集的数据
