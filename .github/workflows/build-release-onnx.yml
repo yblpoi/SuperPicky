@@ -1,0 +1,74 @@
+name: Build and Release SuperPicky ONNX
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number for the release'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.ref }}
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+
+    - name: Create and activate virtual environment
+      run: |
+        python -m venv .venv
+        .venv\Scripts\Activate.ps1
+ 
+    - name: Install dependencies
+      run: |
+        .venv\Scripts\Activate.ps1
+        pip install --upgrade pip
+        pip install -r requirements_onnx.txt
+        pip install pyinstaller lap
+    
+    - name: Download Model
+      run: |
+        .venv\Scripts\Activate.ps1
+        python scripts\download_models.py
+        
+    - name: Build CPU ONNX version
+      run: |
+        .venv\Scripts\Activate.ps1
+        python build_release_win.py --build-type onnx --copy-dir output --debug
+
+    - name: Create installer with Inno Setup
+      uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
+      with:
+        path: ./output/SuperPicky/SuperPicky.iss
+
+    - name: Prepare release assets
+      run: |
+        $version = "${{ github.event.inputs.version || github.ref_name }}".TrimStart('v')
+        New-Item -ItemType Directory -Path release_assets -Force
+        Copy-Item -Path output/SuperPicky_Win64_*.zip -Destination release_assets\
+        # 查找Inno Setup生成的安装包
+        Get-ChildItem -Path output -Recurse -Filter "SuperPicky_Setup_Win64*.exe" | ForEach-Object {
+          Copy-Item -Path $_.FullName -Destination release_assets\
+        }
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.version || github.ref_name }}
+        name: SuperPicky ${{ github.event.inputs.version || github.ref_name }}
+        body_path: ChangeLog.md
+        files: |
+          release_assets/*
