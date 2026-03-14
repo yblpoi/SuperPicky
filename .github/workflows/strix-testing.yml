@@ -3,12 +3,16 @@ name: Security Scan
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Flag to trigger the scan: quick/standard/deep'
+        required: true
 
 jobs:
   strix-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Strix
         run: curl -sSL https://strix.ai/install | bash
@@ -19,4 +23,4 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
           
-        run: strix -n -t ./ --scan-mode quick
+        run: strix -n -t ./ --scan-mode ${{ github.event.inputs.mode }}
