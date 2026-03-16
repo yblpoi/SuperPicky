@@ -367,6 +367,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._expanded_bursts: set = set()   # V5: Track expanded burst IDs
         self._is_merged: bool = False
         self._sub_dirs: list = []
+        self._fullscreen_nav_photos: list = []
 
         self._setup_window()
         self._setup_menu()
@@ -442,8 +443,8 @@ class ResultsBrowserWindow(QMainWindow):
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(0)
 
-        toolbar = self._build_toolbar()
-        center_layout.addWidget(toolbar)
+        self._toolbar = self._build_toolbar()
+        center_layout.addWidget(self._toolbar)
 
         self._thumb_grid = ThumbnailGrid(self.i18n, self)
         self._thumb_grid.photo_selected.connect(self._on_photo_selected)
@@ -462,6 +463,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._fullscreen.next_requested.connect(self._fullscreen_next)
         self._fullscreen.delete_requested.connect(self._on_delete_photo)
         self._fullscreen.context_menu_requested.connect(self._on_fullscreen_context_menu)
+        self._fullscreen.burst_sequence_requested.connect(self._open_burst_sequence)
         self._stack.addWidget(self._fullscreen)   # index 1
 
         # Page 2: 对比查看器（C5）
@@ -832,6 +834,7 @@ class ResultsBrowserWindow(QMainWindow):
         
         self._thumb_grid.load_photos(self._filtered_photos, keep_scroll=True)
         self._fullscreen.set_photo_list(self._filtered_photos)
+        self._fullscreen_nav_photos = list(self._filtered_photos)
 
         if self._filtered_photos:
             target_identity = current_selection if current_selection else _photo_identity(self._filtered_photos[0])
@@ -856,6 +859,138 @@ class ResultsBrowserWindow(QMainWindow):
     def _on_photo_selected(self, photo: dict):
         self._detail_panel.show_photo(photo)
 
+    def _build_burst_sequence(self, photo: dict) -> list:
+        burst_id = photo.get("burst_id")
+        if burst_id is None:
+            return []
+
+        if photo.get("burst_photos"):
+            burst_photos = [dict(p) for p in photo.get("burst_photos", [])]
+        else:
+            burst_photos = [dict(p) for p in self._raw_filtered_photos if p.get("burst_id") == burst_id]
+
+        burst_photos = sorted(burst_photos, key=_burst_sort_key)
+        if len(burst_photos) <= 1:
+            return []
+
+        total = len(burst_photos)
+        sequence = []
+        for pos, burst_photo in enumerate(burst_photos, 1):
+            seq_photo = dict(burst_photo)
+            seq_photo["is_expanded_burst_member"] = True
+            seq_photo["burst_position_index"] = pos
+            seq_photo["burst_total_count"] = total
+            seq_photo["burst_id"] = burst_id
+            sequence.append(seq_photo)
+        return sequence
+
+    def _build_collapsed_navigation_list(self) -> list:
+        burst_map = {}
+        for photo in self._raw_filtered_photos:
+            burst_id = photo.get("burst_id")
+            if burst_id is not None:
+                burst_map.setdefault(burst_id, []).append(photo)
+
+        collapsed_photos = []
+        processed_bursts = set()
+        for photo in self._raw_filtered_photos:
+            burst_id = photo.get("burst_id")
+            if burst_id is None:
+                collapsed_photos.append(dict(photo))
+                continue
+            if burst_id in processed_bursts:
+                continue
+
+            processed_bursts.add(burst_id)
+            burst_photos = sorted(burst_map[burst_id], key=_burst_sort_key)
+            best_photo = max(burst_photos, key=lambda x: (x.get("rating", 0), x.get("composite_score", 0.0)))
+            group_photo = dict(best_photo)
+            group_photo.pop("is_expanded_burst_member", None)
+            group_photo.pop("burst_position_index", None)
+            group_photo.pop("burst_total_count", None)
+            group_photo["is_burst_group"] = True
+            group_photo["burst_count"] = len(burst_photos)
+            group_photo["burst_photos"] = [dict(p) for p in burst_photos]
+            group_photo["burst_id"] = burst_id
+            collapsed_photos.append(group_photo)
+        return collapsed_photos
+
+    def _show_fullscreen_photo(self, photo: dict, nav_photos: Optional[list] = None):
+        self._fullscreen_nav_photos = list(nav_photos) if nav_photos is not None else list(self._filtered_photos)
+        self._fullscreen.set_photo_list(self._fullscreen_nav_photos)
+        self._fullscreen.show_photo(photo)
+        self._detail_panel.show_photo(photo)
+
+        if any(_photo_identity(p) == _photo_identity(photo) for p in self._filtered_photos):
+            self._thumb_grid.select_photo(photo)
+
+    def _build_collapsed_burst_photo(self, photo: dict) -> Optional[dict]:
+        burst_id = photo.get("burst_id")
+        if burst_id is None:
+            return None
+
+        collapsed_nav = self._build_collapsed_navigation_list()
+        existing_group = next(
+            (dict(p) for p in collapsed_nav if p.get("burst_id") == burst_id and p.get("is_burst_group")),
+            None,
+        )
+        if existing_group:
+            return existing_group
+
+        burst_photos = [dict(p) for p in self._raw_filtered_photos if p.get("burst_id") == burst_id]
+        burst_photos = sorted(burst_photos, key=_burst_sort_key)
+        if len(burst_photos) <= 1:
+            return None
+
+        base_photo = next(
+            (dict(p) for p in self._filtered_photos if _photo_identity(p) == _photo_identity(photo)),
+            None,
+        )
+        if base_photo is None:
+            base_photo = dict(max(burst_photos, key=lambda x: (x.get("rating", 0), x.get("composite_score", 0.0))))
+
+        base_photo.pop("is_expanded_burst_member", None)
+        base_photo.pop("burst_position_index", None)
+        base_photo.pop("burst_total_count", None)
+        base_photo["is_burst_group"] = True
+        base_photo["burst_count"] = len(burst_photos)
+        base_photo["burst_photos"] = burst_photos
+        base_photo["burst_id"] = burst_id
+        return base_photo
+
+    def _is_sequence_mode(self, photo: dict) -> bool:
+        burst_id = photo.get("burst_id")
+        if burst_id is None or not photo.get("is_expanded_burst_member"):
+            return False
+        return (
+            len(self._fullscreen_nav_photos) > 1
+            and all(p.get("burst_id") == burst_id for p in self._fullscreen_nav_photos)
+        )
+
+    @Slot(dict)
+    def _open_burst_sequence(self, photo: dict):
+        if self._is_sequence_mode(photo):
+            collapsed_photo = self._build_collapsed_burst_photo(photo)
+            if collapsed_photo:
+                self._show_fullscreen_photo(collapsed_photo, nav_photos=self._build_collapsed_navigation_list())
+                self._detail_panel._switch_view(True)
+                self._toolbar.hide()
+                self._stack.setCurrentIndex(1)
+                self._fullscreen.setFocus()
+            return
+
+        sequence = self._build_burst_sequence(photo)
+        if not sequence:
+            return
+
+        target_identity = _photo_identity(photo)
+        selected_photo = next((p for p in sequence if _photo_identity(p) == target_identity), sequence[0])
+        self._show_fullscreen_photo(selected_photo, nav_photos=sequence)
+        self._detail_panel._switch_view(True)
+        self._toolbar.hide()
+        self._stack.setCurrentIndex(1)
+        self._fullscreen.setFocus()
+
     @Slot()
     def _prev_photo(self):
         photo = self._thumb_grid.select_prev()
@@ -875,8 +1010,11 @@ class ResultsBrowserWindow(QMainWindow):
     @Slot(dict)
     def _enter_fullscreen(self, photo: dict):
         """双击缩略图 → 进入全屏查看器。"""
-        self._fullscreen.show_photo(photo)
-        self._detail_panel.show_photo(photo)
+        if photo.get("is_expanded_burst_member"):
+            self._open_burst_sequence(photo)
+            return
+
+        self._show_fullscreen_photo(photo)
         self._detail_panel._switch_view(True)   # 进入全屏 → 切到裁切图
         self._stack.setCurrentIndex(1)
         self._fullscreen.setFocus()  # 确保全屏 viewer 获得键盘焦点
@@ -885,24 +1023,39 @@ class ResultsBrowserWindow(QMainWindow):
     def _exit_fullscreen(self):
         """返回 grid 视图。"""
         self._stack.setCurrentIndex(0)
+        self._fullscreen_nav_photos = list(self._filtered_photos)
         self._detail_panel._switch_view(False)  # 退出全屏 → 切回全图
         self.setFocus()  # 确保窗口拿回焦点
 
     @Slot()
     def _fullscreen_prev(self):
         """全屏模式：上一张。"""
-        photo = self._thumb_grid.select_prev()
-        if photo:
-            self._fullscreen.show_photo(photo)
-            self._detail_panel.show_photo(photo)
+        if not self._fullscreen_nav_photos:
+            return
+        current_key = _photo_identity(getattr(self._fullscreen, "_current_photo", {}) or {})
+        nav_keys = [_photo_identity(p) for p in self._fullscreen_nav_photos]
+        try:
+            idx = nav_keys.index(current_key)
+        except ValueError:
+            idx = -1
+        new_idx = idx - 1
+        if 0 <= new_idx < len(self._fullscreen_nav_photos):
+            self._show_fullscreen_photo(self._fullscreen_nav_photos[new_idx], nav_photos=self._fullscreen_nav_photos)
 
     @Slot()
     def _fullscreen_next(self):
         """全屏模式：下一张。"""
-        photo = self._thumb_grid.select_next()
-        if photo:
-            self._fullscreen.show_photo(photo)
-            self._detail_panel.show_photo(photo)
+        if not self._fullscreen_nav_photos:
+            return
+        current_key = _photo_identity(getattr(self._fullscreen, "_current_photo", {}) or {})
+        nav_keys = [_photo_identity(p) for p in self._fullscreen_nav_photos]
+        try:
+            idx = nav_keys.index(current_key)
+        except ValueError:
+            idx = -1
+        new_idx = idx + 1
+        if 0 <= new_idx < len(self._fullscreen_nav_photos):
+            self._show_fullscreen_photo(self._fullscreen_nav_photos[new_idx], nav_photos=self._fullscreen_nav_photos)
 
     @Slot(object, int)
     def _on_rating_changed(self, photo_or_filename, new_rating: int):
@@ -1632,8 +1785,11 @@ class ResultsBrowserWidget(QWidget):
 
     @Slot(dict)
     def _enter_fullscreen(self, photo: dict):
-        self._fullscreen.show_photo(photo)
-        self._detail_panel.show_photo(photo)
+        if photo.get("is_expanded_burst_member"):
+            self._open_burst_sequence(photo)
+            return
+
+        self._show_fullscreen_photo(photo)
         self._detail_panel._switch_view(True)
         self._toolbar.hide()
         self._stack.setCurrentIndex(1)
@@ -1643,22 +1799,37 @@ class ResultsBrowserWidget(QWidget):
     def _exit_fullscreen(self):
         self._toolbar.show()
         self._stack.setCurrentIndex(0)
+        self._fullscreen_nav_photos = list(self._filtered_photos)
         self._detail_panel._switch_view(False)
         self.setFocus()
 
     @Slot()
     def _fullscreen_prev(self):
-        photo = self._thumb_grid.select_prev()
-        if photo:
-            self._fullscreen.show_photo(photo)
-            self._detail_panel.show_photo(photo)
+        if not self._fullscreen_nav_photos:
+            return
+        current_key = _photo_identity(getattr(self._fullscreen, "_current_photo", {}) or {})
+        nav_keys = [_photo_identity(p) for p in self._fullscreen_nav_photos]
+        try:
+            idx = nav_keys.index(current_key)
+        except ValueError:
+            idx = -1
+        new_idx = idx - 1
+        if 0 <= new_idx < len(self._fullscreen_nav_photos):
+            self._show_fullscreen_photo(self._fullscreen_nav_photos[new_idx], nav_photos=self._fullscreen_nav_photos)
 
     @Slot()
     def _fullscreen_next(self):
-        photo = self._thumb_grid.select_next()
-        if photo:
-            self._fullscreen.show_photo(photo)
-            self._detail_panel.show_photo(photo)
+        if not self._fullscreen_nav_photos:
+            return
+        current_key = _photo_identity(getattr(self._fullscreen, "_current_photo", {}) or {})
+        nav_keys = [_photo_identity(p) for p in self._fullscreen_nav_photos]
+        try:
+            idx = nav_keys.index(current_key)
+        except ValueError:
+            idx = -1
+        new_idx = idx + 1
+        if 0 <= new_idx < len(self._fullscreen_nav_photos):
+            self._show_fullscreen_photo(self._fullscreen_nav_photos[new_idx], nav_photos=self._fullscreen_nav_photos)
 
     @Slot(object, int)
     def _on_rating_changed(self, photo_or_filename, new_rating: int):

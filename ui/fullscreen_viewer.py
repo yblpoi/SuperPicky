@@ -706,6 +706,7 @@ class FullscreenViewer(QWidget):
     close_requested = Signal()
     prev_requested = Signal()
     next_requested = Signal()
+    burst_sequence_requested = Signal(dict)
     delete_requested = Signal(dict)   # 功能1：携带当前 photo dict
     context_menu_requested = Signal(dict, object)   # (photo, QPoint全局坐标)
 
@@ -789,6 +790,11 @@ class FullscreenViewer(QWidget):
         h.addWidget(self._lock_zoom_btn)
 
         h.addStretch()
+        self._burst_info_btn = QPushButton("")
+        self._burst_info_btn.setFixedHeight(30)
+        self._burst_info_btn.hide()
+        self._burst_info_btn.clicked.connect(self._on_burst_info_clicked)
+        h.addWidget(self._burst_info_btn)
 
         # 文件名标签
         self._filename_label = QLabel("")
@@ -892,6 +898,10 @@ class FullscreenViewer(QWidget):
         """大图右键 → 冒泡右键菜单信号给父组件。"""
         if self._current_photo:
             self.context_menu_requested.emit(self._current_photo, global_pos)
+
+    def _on_burst_info_clicked(self):
+        if self._current_photo and self._burst_info_btn.isEnabled():
+            self.burst_sequence_requested.emit(self._current_photo)
 
     # 功能2：锁定缩放
     def _toggle_zoom_lock(self):
@@ -999,6 +1009,7 @@ class FullscreenViewer(QWidget):
 
         filename = photo.get("filename", "")
         self._filename_label.setText(filename)
+        self._update_burst_info(photo)
 
         rating = photo.get("rating", 0)
         _rating_text = {5: "★★★★★", 4: "★★★★", 3: "★★★", 2: "★★", 1: "★"}
@@ -1066,6 +1077,54 @@ class FullscreenViewer(QWidget):
 
         # 确保全屏 viewer 持有键盘焦点（切换照片后维持焦点）
         self.setFocus()
+
+    def _update_burst_info(self, photo: dict):
+        burst_pos = photo.get("burst_position_index")
+        burst_total = photo.get("burst_total_count")
+        burst_count = photo.get("burst_count", 1)
+        is_group = photo.get("is_burst_group") and burst_count > 1
+
+        if burst_pos and burst_total:
+            self._burst_info_btn.setText(f"{burst_pos}/{burst_total}")
+            self._burst_info_btn.setEnabled(True)
+            self._burst_info_btn.setCursor(Qt.PointingHandCursor)
+            self._burst_info_btn.setToolTip("\u70b9\u51fb\u6536\u56de\u8fde\u62cd\u5e8f\u5217" if not str(getattr(self.i18n, "current_lang", "")).startswith("en") else "Click to collapse burst sequence")
+            self._burst_info_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {COLORS['bg_input']};"
+                f" border: 1px solid {COLORS['accent']};"
+                f" border-radius: 14px;"
+                f" color: {COLORS['accent']};"
+                f" font-size: 12px;"
+                f" font-weight: 600;"
+                f" padding: 2px 12px; }}"
+                f"QPushButton:hover {{ background-color: {COLORS['bg_card']};"
+                f" border-color: {COLORS['accent']};"
+                f" color: {COLORS['accent']}; }}"
+            )
+            self._burst_info_btn.show()
+            return
+
+        if is_group:
+            lang = getattr(self.i18n, "current_lang", "")
+            text = f"Burst Sequence ({burst_count})" if str(lang).startswith("en") else f"\u8fde\u62cd\u5e8f\u5217\uff08{burst_count}\u5f20\uff09"
+            self._burst_info_btn.setText(text)
+            self._burst_info_btn.setEnabled(True)
+            self._burst_info_btn.setCursor(Qt.PointingHandCursor)
+            self._burst_info_btn.setToolTip("")
+            self._burst_info_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {COLORS['bg_card']};"
+                f" border: 1px solid {COLORS['border']};"
+                f" border-radius: 14px;"
+                f" color: {COLORS['text_secondary']};"
+                f" font-size: 12px;"
+                f" padding: 2px 12px; }}"
+                f"QPushButton:hover {{ border-color: {COLORS['accent']};"
+                f" color: {COLORS['accent']}; }}"
+            )
+            self._burst_info_btn.show()
+            return
+
+        self._burst_info_btn.hide()
 
     # ------------------------------------------------------------------
     #  内部
