@@ -406,7 +406,6 @@
     "using_mps": "✅ Using MPS (Apple GPU) acceleration",
     "using_cuda": "✅ Using CUDA (NVIDIA GPU) acceleration",
     "using_cpu": "⚠️ Using CPU inference (GPU unavailable)",
-    "using_cpu_onnx": "ℹ️ Using CPU inference",
     "device_detection_failed": "⚠️ Device detection failed: {error}",
     "mps_detected": "✅ Apple GPU (MPS) detected, hardware acceleration enabled",
     "mps_unavailable": "⚠️ MPS unavailable, using CPU inference",

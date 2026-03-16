@@ -13,42 +13,35 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Define the models and their destination directories relative to the project root
 MODELS_TO_DOWNLOAD = [
     {
+        "category": "Classification",
+        "repo_id": "jamesphotography/SuperPicky-models",
+        "filename": "model20240824.pth",
+        "dest_dir": "models",
+    },
+    {
+        "category": "Flight Detection",
+        "repo_id": "jamesphotography/SuperPicky-models",
+        "filename": "superFlier_efficientnet.pth",
+        "dest_dir": "models",
+    },
+    {
+        "category": "Keypoint Detection",
+        "repo_id": "jamesphotography/SuperPicky-models",
+        "filename": "cub200_keypoint_resnet50_slim.pth",
+        "dest_dir": "models",
+    },
+    {
         "category": "Database",
         "repo_id": "jamesphotography/SuperPicky-models",
         "filename": "avonet.db",
         "dest_dir": "birdid/data",
     },
-    # === ONNX Models ===
     {
-        "category": "YOLO Segmentation (ONNX)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "yolo11l-seg.onnx",
+        "category": "Quality Assessment",
+        "repo_id": "chaofengc/IQA-PyTorch-Weights",
+        "filename": "cfanet_iaa_ava_res50-3cd62bb3.pth",
         "dest_dir": "models",
-    },
-    {
-        "category": "Quality Assessment (ONNX)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "cfanet_iaa_ava_res50.onnx",
-        "dest_dir": "models",
-    },
-    {
-        "category": "Keypoint Detection (ONNX)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "cub200_keypoint_resnet50.onnx",
-        "dest_dir": "models",
-    },
-    {
-        "category": "Flight Detection (ONNX)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "superFlier_efficientnet.onnx",
-        "dest_dir": "models",
-    },
-    {
-        "category": "Classification (ONNX)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "model20240824.onnx",
-        "dest_dir": "models",
-    },
+    }
 ]
 
 def main():

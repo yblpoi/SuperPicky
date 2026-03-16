@@ -4,6 +4,8 @@ SuperPicky 配置管理模块
 """
 import os
 import sys
+import platform
+import torch
 from dataclasses import dataclass
 from typing import List, Dict
 
@@ -55,7 +57,7 @@ class DirectoryConfig:
 @dataclass
 class AIConfig:
     """AI 模型相关配置"""
-    MODEL_FILE: str = "models/yolo11l-seg.onnx"  # ONNX 版本: yolo11l-seg 分割模型
+    MODEL_FILE: str = "models/yolo11l-seg.pt"  # pth 版本: yolo11l-seg 分割模型
     BIRD_CLASS_ID: int = 14              # YOLO 模型中鸟类的类别 ID
     TARGET_IMAGE_SIZE: int = 1024        # 图像预处理目标尺寸（保持1024以维持锐度值一致性）
     CENTER_THRESHOLD: float = 0.15       # 鸟类位置中心阈值
@@ -138,31 +140,26 @@ class Config:
 
 def get_best_device():
     """
-    获取最佳计算设备（ONNX 版本）
-    返回一个带 .type 属性的对象，兼容原有 get_best_device().type 调用
-    ONNX Runtime 通过 provider 选择设备，此函数仅用于日志和兼容
+    获取最佳计算设备
+    判断带torch的设备
     """
-    import platform
-    from types import SimpleNamespace
     
     try:
         system = platform.system()
         if system == "Darwin":
-            # macOS: ONNX Runtime 默认走 CPU（CoreML 需额外配置）
-            return SimpleNamespace(type="cpu")
-        
-        # Windows/Linux: 检查 CUDA 是否可用
-        try:
-            import onnxruntime as ort
-            providers = ort.get_available_providers()
-            if 'CUDAExecutionProvider' in providers:
-                return SimpleNamespace(type="cuda")
-        except Exception:
-            pass
-        
-        return SimpleNamespace(type="cpu")
+            # 检查 MPS (Apple GPU)
+            if torch.backends.mps.is_available():
+                return torch.device("mps")
+            else:
+                return torch.device("cpu")
+        else:
+            # linux/windows检查 CUDA (NVIDIA GPU)
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            else:
+                return torch.device("cpu")
     except Exception:
-        return SimpleNamespace(type="cpu")
+        return torch.device("cpu")
 
 
 # 全局配置实例

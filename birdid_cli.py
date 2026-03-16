@@ -40,7 +40,7 @@ def identify_single(args, image_path: str) -> dict:
 
 def identify_single_birdid2024(args, image_path: str) -> dict:
     """使用 birdid2024 模型识别"""
-    from birdid.bird_identifier_onnx import identify_bird
+    from birdid.bird_identifier import identify_bird
 
     result = identify_bird(
         image_path,
@@ -58,7 +58,7 @@ def identify_single_birdid2024(args, image_path: str) -> dict:
 def identify_single_osea(args, image_path: str) -> dict:
     """使用 OSEA 模型识别"""
     from birdid.osea_classifier import get_osea_classifier
-    from birdid.bird_identifier_onnx import load_image, get_yolo_detector, YOLO_AVAILABLE
+    from birdid.bird_identifier import load_image, get_yolo_detector, YOLO_AVAILABLE
 
     result = {
         'success': False,
@@ -332,7 +332,7 @@ def cmd_organize(args):
     """批量识别并按鸟种分目录"""
     import shutil
     import json
-    from birdid.bird_identifier_onnx import identify_bird
+    from birdid.bird_identifier import identify_bird
     from tools.exiftool_manager import get_exiftool_manager
     
     print_banner()

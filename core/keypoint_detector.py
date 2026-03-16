@@ -14,6 +14,7 @@ import numpy as np
 import cv2
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from config import get_best_device
 
 
 @dataclass
@@ -93,7 +94,6 @@ class KeypointDetector:
         """
         self.model_path = model_path or self._get_default_model_path()
         # 使用统一的设备检测逻辑
-        from config import get_best_device
         self.device = get_best_device()
         self.model = None
         self.transform = transforms.Compose([

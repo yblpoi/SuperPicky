@@ -21,7 +21,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
 
-from birdid.bird_identifier_onnx import (
+from birdid.bird_identifier import (
     identify_bird,
     predict_bird,
     load_image,

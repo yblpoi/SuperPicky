@@ -3,7 +3,7 @@ SuperPicky BirdID 模块
 鸟类识别核心功能
 """
 
-from birdid.bird_identifier_onnx import (
+from birdid.bird_identifier import (
     identify_bird,
     quick_identify,
     predict_bird,

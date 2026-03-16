@@ -31,14 +31,14 @@ from datetime import datetime
 
 # 现有模块
 from tools.find_bird_util import raw_to_jpeg
-from ai_model_onnx import load_yolo_model, detect_and_draw_birds
+from ai_model import load_yolo_model, detect_and_draw_birds
 from tools.report_db import ReportDB
 from tools.exiftool_manager import get_exiftool_manager
 from tools.file_utils import ensure_hidden_directory
 from advanced_config import get_advanced_config
 from core.rating_engine import RatingEngine, create_rating_engine_from_config
-from core.keypoint_detector_onnx import ONNXKeypointDetector as KeypointDetector, get_keypoint_detector
-from core.flight_detector_onnx import ONNXFlightDetector as FlightDetector, get_flight_detector, FlightResult
+from core.keypoint_detector import KeypointDetector, get_keypoint_detector
+from core.flight_detector import FlightDetector, get_flight_detector, FlightResult
 from core.exposure_detector import ExposureDetector, get_exposure_detector, ExposureResult
 from core.focus_point_detector import get_focus_detector, verify_focus_in_bbox
 
@@ -1000,7 +1000,7 @@ class PhotoProcessor:
         # 预获取 TOPIQ scorer（单例）并在循环中复用，减少重复导入/查找开销
         topiq_scorer = None
         try:
-            from iqa_scorer_onnx import get_iqa_scorer
+            from iqa_scorer import get_iqa_scorer
             from config import get_best_device
             topiq_scorer = get_iqa_scorer(device=get_best_device().type)
         except Exception:
@@ -1015,7 +1015,7 @@ class PhotoProcessor:
         identify_bird_fn = None
         if self.settings.auto_identify:
             try:
-                from birdid.bird_identifier_onnx import identify_bird as identify_bird_fn
+                from birdid.bird_identifier import identify_bird as identify_bird_fn
             except Exception as e:
                 identify_bird_fn = None
                 self._log(f"  ⚠️ BirdID import failed: {e}", "warning")
@@ -1160,8 +1160,13 @@ class PhotoProcessor:
                     self._log(f"  ⚠️ Bird ID failed [{source_filename or file_prefix}]: {e}", "warning")
         
         # 轻量 Job 调度：在 MPS 上默认关闭 YOLO 预取，避免与 TOPIQ 并发争用
-        # ONNX 分支: 强制 mps_available 为 False
+        # 如需强制开启/关闭，可通过 SUPERPICKY_YOLO_PREFETCH 覆盖。
         mps_available = False
+        try:
+            from config import get_best_device
+            mps_available = bool(get_best_device().type == 'mps')
+        except Exception:
+            mps_available = False
         
         env_yolo_prefetch_raw = os.getenv("SUPERPICKY_YOLO_PREFETCH", "").strip().lower()
         if env_yolo_prefetch_raw:
@@ -1662,7 +1667,7 @@ class PhotoProcessor:
                     step_start = time_module.time()
                     scorer = topiq_scorer
                     if scorer is None:
-                        from iqa_scorer_onnx import get_iqa_scorer
+                        from iqa_scorer import get_iqa_scorer
                         from config import get_best_device
                         scorer = get_iqa_scorer(device=get_best_device().type)
                         topiq_scorer = scorer

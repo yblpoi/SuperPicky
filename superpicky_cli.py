@@ -690,7 +690,7 @@ def cmd_info(args):
 
 def cmd_identify(args):
     """识别鸟类"""
-    from birdid.bird_identifier_onnx import identify_bird, YOLO_AVAILABLE, RAW_SUPPORT
+    from birdid.bird_identifier import identify_bird, YOLO_AVAILABLE, RAW_SUPPORT
 
     print_banner()
     print(f"\n🐦 鸟类识别")
