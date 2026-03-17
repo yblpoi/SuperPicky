@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""Legacy helper script.
+
+正式的 Windows CPU/CUDA Patch 构建入口已迁移到 `build_release_win.py`。
+保留此脚本仅用于历史兼容与手工对照，不再由 GitHub Actions 调用。
+"""
 import os
 import sys
 import shutil
@@ -17,6 +22,7 @@ CUDA_DIR = os.path.join(BASE_DIR, 'output', 'SuperPicky_Win64_CUDA')
 IMG_DIR = os.path.join(BASE_DIR, 'img')
 INNO_DIR = os.path.join(BASE_DIR, 'inno')
 PATCH_DIR = os.path.join(BASE_DIR, 'output', 'cuda_patch')
+PATCH_MANIFEST = os.path.join(PATCH_DIR, '_internal', 'cuda_patch_manifest.txt')
 
 # 确保补丁目录存在, 清空目录
 if not os.path.exists(PATCH_DIR):
@@ -62,6 +68,14 @@ def copy_inno_setup():
     shutil.copy2(os.path.join(INNO_DIR, 'SuperPicky_CUDA_Patch.iss'), os.path.join(PATCH_DIR, 'SuperPicky_CUDA_Patch.iss'))
     shutil.copy2(os.path.join(INNO_DIR, 'ChineseSimplified.isl'), os.path.join(PATCH_DIR, 'ChineseSimplified.isl'))
 
+
+def write_patch_manifest(cuda_only_files):
+    """写入 CUDA 独有文件清单，供主卸载程序清理补丁残留"""
+    os.makedirs(os.path.dirname(PATCH_MANIFEST), exist_ok=True)
+    with open(PATCH_MANIFEST, 'w', encoding='utf-8', newline='\n') as fh:
+        for relative_path in sorted(cuda_only_files):
+            fh.write(relative_path.replace('/', '\\') + '\n')
+
 # 分析差异
 def analyze_differences():
     print("开始分析 CPU 和 CUDA 版本的文件差异...")
@@ -76,6 +90,7 @@ def analyze_differences():
     # 差异文件计数
     different_files = 0
     cuda_only_files = 0
+    cuda_only_file_list = []
     
     # 分析每个文件
     for file_path in all_files:
@@ -90,6 +105,7 @@ def analyze_differences():
             # CUDA 独有的文件
             print(f"CUDA 独有文件: {file_path}")
             cuda_only_files += 1
+            cuda_only_file_list.append(file_path)
             # 复制到补丁目录
             patch_file = os.path.join(PATCH_DIR, file_path)
             os.makedirs(os.path.dirname(patch_file), exist_ok=True)
@@ -111,6 +127,8 @@ def analyze_differences():
     print(f"- 不同的文件数量: {different_files}")
     print(f"- CUDA 独有的文件数量: {cuda_only_files}")
     print(f"- 补丁文件已导出到: {PATCH_DIR}")
+    write_patch_manifest(cuda_only_file_list)
+    print(f"- CUDA 独有文件清单已写入: {PATCH_MANIFEST}")
     copy_img_dir()
     print(f"- img 目录已复制到补丁目录: {os.path.join(PATCH_DIR, 'img')}")
     copy_inno_setup()

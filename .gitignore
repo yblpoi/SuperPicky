@@ -109,7 +109,6 @@ pkg_root/
 # Models and Data downloaded from Hugging Face
 models/*.pth
 models/*.onnx
-models/*.pt
 birdid/data/avonet.db
 
 # 针对各平台的临时宣发与推广素材（不上云）

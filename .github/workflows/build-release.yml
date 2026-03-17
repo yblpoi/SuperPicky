@@ -1,9 +1,6 @@
-name: Build and Release SuperPicky
+name: Build and Release SuperPicky Legacy CPU
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       version:
@@ -17,62 +14,71 @@ jobs:
       contents: write
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-      with:
-        ref: ${{ github.ref }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.12'
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
-    - name: Create and activate virtual environment
-      run: |
-        python -m venv .venv
-        .venv\Scripts\Activate.ps1
- 
-    - name: Install dependencies
-      run: |
-        .venv\Scripts\Activate.ps1
-        pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-    
-    - name: Download Model
-      run: |
-        .venv\Scripts\Activate.ps1
-        python scripts\download_models.py
-        
-    - name: Update version For Inno Setup
-      run: |
-        .venv\Scripts\Activate.ps1
-        python scripts\update_inno_version.py 
-        
-    - name: Build CPU version
-      run: |
-        .venv\Scripts\Activate.ps1
-        .\build_release_cpu.bat
+      - name: Resolve release metadata
+        id: release_meta
+        shell: pwsh
+        run: |
+          $rawVersion = "${{ github.event.inputs.version }}"
+          if (-not $rawVersion) {
+            throw "Release version is required."
+          }
 
-    - name: Create installer with Inno Setup
-      uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
-      with:
-        path: ./output/SuperPicky_Win64_CPU/SuperPicky.iss
+          $tag = if ($rawVersion.StartsWith("v")) { $rawVersion } else { "v$rawVersion" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "name=SuperPicky $tag" >> $env:GITHUB_OUTPUT
 
-    - name: Prepare release assets
-      run: |
-        $version = "${{ github.event.inputs.version || github.ref_name }}".TrimStart('v')
-        New-Item -ItemType Directory -Path release_assets -Force
-        # Copy-Item -Path output/SuperPicky_Win64_CPU.zip -Destination release_assets\
-        # 查找Inno Setup生成的安装包
-        Get-ChildItem -Path output -Recurse -Filter "SuperPicky_Setup_Win64*.exe" | ForEach-Object {
-          Copy-Item -Path $_.FullName -Destination release_assets\
-        }
+      - name: Create build virtual environment
+        shell: pwsh
+        run: python -m venv .venv
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.event.inputs.version || github.ref_name }}
-        name: SuperPicky ${{ github.event.inputs.version || github.ref_name }}
-        files: |
-          release_assets/*
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Build CPU version
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe build_release_win.py --build-type cpu --copy-dir output --debug
+
+      - name: Create installer with Inno Setup
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
+        with:
+          path: ./output/installer_cpu/SuperPicky.iss
+
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release_assets -Force | Out-Null
+
+          $assetPatterns = @(
+            "output/SuperPicky_Win64_*_cpu.zip",
+            "output/installer_cpu/Output/SuperPicky_Setup_Win64_*.exe"
+          )
+
+          foreach ($pattern in $assetPatterns) {
+            $matches = Get-ChildItem -Path $pattern -File -ErrorAction Stop
+            if ($matches.Count -ne 1) {
+              throw "Expected exactly one asset for pattern '$pattern', found $($matches.Count)."
+            }
+            Copy-Item -Path $matches[0].FullName -Destination release_assets/
+          }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.name }}
+          body_path: ChangeLog.md
+          files: |
+            release_assets/*

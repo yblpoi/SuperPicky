@@ -87,7 +87,7 @@ rm -f "${BUILD_INFO_FILE}.tmp"
 log_info "  Commit Hash: ${COMMIT_HASH}"
 
 log_info "开始 PyInstaller 打包..."
-pyinstaller SuperPicky_onnx.spec --clean --noconfirm
+pyinstaller SuperPicky.spec --clean --noconfirm
 
 # 恢复原始 build_info.py
 mv "${BUILD_INFO_BACKUP}" "${BUILD_INFO_FILE}"

@@ -1,123 +1,69 @@
-# 📝 SuperPicky v4.2.0 ChangeLog / 更新日志
+# SuperPicky Nightly / Unreleased ChangeLog
 
-**📅 Release Date / 发布日期**: 2026-03-14\
-**🏷️ Version / 版本号**: 4.2.0\
-**📦 Git Commit / Git 提交**: 6c31cf7
+**整理范围**: `from tag 4.2.0 to nightly HEAD`  
+**当前分支基线**: `nightly`  
+**当前提交**: `d3eeca7e`  
+**整理日期**: `2026-03-17`
 
-***
+---
 
-## 🚀 Major Updates / 重大更新
+## 摘要 / Summary
 
-### 1. 🤖 Brand-new ONNX Runtime Inference Engine / 全新 ONNX Runtime 推理引擎
+这份更新日志整理的是 `4.2.0` 正式版之后，`nightly` 分支到当前为止的净变化。
 
-- **🏗️ Core Architecture Upgrade / 核心架构升级**: Complete replacement of PyTorch inference engine with ONNX Runtime / 完全替换 PyTorch 推理引擎为 ONNX Runtime
-- **⚡ Performance Boost / 性能提升**: Faster pure CPU inference, significantly smaller package size / 纯 CPU 推理速度更快，包体积显著减小
-- **📦 New Modules / 新增模块**:
-  - `ai_model_onnx.py` - Core inference module / 核心推理模块
-  - `bird_identifier_onnx.py` - Bird identifier ONNX implementation / 鸟类识别 ONNX 实现
-  - `osea_classifier_onnx.py` - OSEA classifier ONNX implementation / OSEA 分类器 ONNX 实现
-  - `flight_detector_onnx.py` - Flight detector ONNX implementation / 飞版检测 ONNX 实现
-  - `keypoint_detector_onnx.py` - Keypoint detector ONNX implementation / 关键点检测 ONNX 实现
-  - `iqa_scorer_onnx.py` - Image quality scorer ONNX implementation / 图像质量评分 ONNX 实现
-  - `topiq_model_onnx.py` - TOPIQ aesthetic scorer ONNX implementation / TOPIQ 美学评分 ONNX 实现
-- **🔄 Model Conversion / 模型转换**: Added 5 model conversion scripts (`scripts/convert_*.py`) / 新增 5 个模型转换脚本（`scripts/convert_*.py`）
-- **🌐 Model Hosting / 模型托管**: Models hosted on HuggingFace, downloaded via `scripts/download_models.py` / 模型通过 HuggingFace 下载，使用 `scripts/download_models.py`
-- **📦 Packaging Config / 打包配置**: Added PyInstaller spec files for macOS and Windows ONNX versions / 新增 macOS 和 Windows ONNX 版本的 PyInstaller spec 文件
+需要特别说明的是：中间曾经尝试过 ONNX 路线，但相关改动已经回滚，当前主线已经重新回到 **PyTorch**。因此，本日志只记录目前 `nightly` 真实保留下来的功能、修复与发布改进，不把已经撤回的 ONNX 方案写成现有能力。
 
-***
+---
 
-## ✨ New Features & Improvements / 新功能与改进
+## 1. 主线架构与模型路线 / Architecture
 
-### 2. 🏗️ Build System Optimization / 构建系统优化
+- **回归 PyTorch 主线**：ONNX 推理路线已经撤回，当前 Nightly 再次以 PyTorch 为主线，避免文档与实际运行状态不一致。
+- **设备选择逻辑统一**：与推理设备选择相关的判断重新收敛到现行主线逻辑，减少不同入口之间的行为偏差。
+- **关键点模型瘦身**：关键点检测模型从约 `283MB` 精简到约 `95MB`，减轻包体与加载压力。
+- **模型与依赖清理**：清理一批无效依赖与错误排除项，修复部分打包后运行崩溃问题。
 
-- 📄 Added `requirements_onnx.txt` - Dedicated dependency file for ONNX version / 新增 `requirements_onnx.txt` - ONNX 版本专用依赖文件
-- 📦 Added `build_release_win.py` - Windows version build script / 新增 `build_release_win.py` - Windows 版本构建脚本
-- 🔄 Updated GitHub Actions workflow for ONNX version auto-build / 更新 GitHub Actions 工作流，支持 ONNX 版本自动构建
-- 📝 Updated `scripts/update_inno_version.py` to support simultaneous update of `core/build_info.py` / 更新 `scripts/update_inno_version.py`，支持同时更新 `core/build_info.py`
-- 📄 Added `ChangeLog.md` to release assets / 添加 `ChangeLog.md` 到发布资源
+## 2. 结果浏览器与批处理工作流 / Results Browser & Batch
 
-### 3. 📦 Dependency Management / 依赖管理
+- **子目录递归批处理**：CLI 和 GUI 侧都补齐了对子目录递归扫描与批量处理的支持，遇到嵌套目录时可以更自然地进入 Batch 模式。
+- **Batch 模式目录切换**：结果浏览器新增目录切换能力，处理多批次结果时切换更顺手。
+- **最近目录历史**：菜单栏增加最近选鸟目录历史，方便快速回到最近处理过的文件夹。
+- **星级回写 EXIF**：在结果浏览器中修改星级时，可以同步写回原始照片的 EXIF `Rating`。
+- **右键复制鸟名**：结果卡片新增右键复制鸟名能力，便于后续整理与分享。
+- **浏览器稳定性加固**：围绕合并、筛选、显示刷新和状态同步做了一轮整合与加固，减少浏览器回归问题。
+- **全屏连拍循环修复**：修复连拍序列在全屏查看场景下的循环/切换问题。
+- **详情面板补充文件大小信息**：详情区域现在可以直接看到文件大小，便于快速判断资源占用与导出选择。
+- **清理 `burst_id` 分组残留**：修复部分连拍分组状态残留，降低批次切换后显示错乱的概率。
 
-- 📄 Updated `requirements_base.txt`: Added `pi-heif` for HEIF/HEIC format support / `requirements_base.txt` 更新：添加 `pi-heif`，用于 HEIF/HEIC 格式支持
-- 🔥 Removed PyTorch-related dependencies (Nightly branch supports ONNX only) / 移除 PyTorch 相关依赖（Nightly 分支仅支持 ONNX）
+## 3. 鸟名检索与资源修复 / Bird Search & Resources
 
-***
+- **新增 IOC 鸟名检索能力**：整合 IOC 数据库，支持独立的中英鸟名查询工作流。
+- **鸟名数据库打包修复**：修复打包后 `birdname.db` 资源路径问题，避免查询结果为空。
+- **冻结环境路径兼容**：在打包应用中改进数据库资源定位逻辑，提升 macOS / 打包环境下的一致性。
+- **清理重复数据库副本**：移除根目录重复副本，明确 `ioc/birdname.db` 为实际使用的数据源。
 
-## 🐛 Bug Fixes / Bug 修复
+## 4. 稳定性与兼容性修复 / Stability & Compatibility
 
-### 4. 🔧 Core Feature Fixes / 核心功能修复
+- **中文路径兼容修复**：修复包含中文路径时，传给 `cv2`、`rawpy` 及相关处理链路的兼容性问题。
+- **i18n 输出编码修复**：修复 Windows 非 UTF-8 控制台环境下的国际化输出编码问题。
+- **ExifTool 进程安全回收**：强化应用退出时的 ExifTool 常驻进程清理，减少后台残留。
+- **macOS 屏幕录制权限检查**：在截图链路前增加权限检查，降低因权限缺失导致的失败。
+- **macOS 截图线程处理优化**：将相关截图调用放到更合适的执行路径，减少界面阻塞风险。
+- **macOS 下拉框点击问题修复**：修复 `QComboBox` 在 macOS 上不可点击/交互异常的问题。
+- **macOS 打包资源路径修复**：修复 PyInstaller `BUNDLE` 环境中的资源路径识别问题。
+- **macOS GUI 启动目录修复**：将 GUI 启动目录调整到更安全的位置，避免运行期间写入失败。
+- **语言状态判断修复**：修正部分界面在 macOS 下依赖错误语言来源导致的显示异常。
 
-- **🐦 Fixed bird name search database empty issue** (commit 5239abb) / **修复鸟名搜索数据库为空问题** (commit 5239abb)
-  - 📂 Resolved `ioc/birdname.db` path issue after packaging / 解决打包后 `ioc/birdname.db` 路径问题
-  - 📦 Updated `SuperPicky_onnx.spec` to properly package database file / 更新 `SuperPicky_onnx.spec` 正确打包数据库文件
-  - 🔧 Fixed database loading logic in `ui/birdname_search_widget.py` / 修复 `ui/birdname_search_widget.py` 数据库加载逻辑
-- **🏷️ Fixed Chinese path garbled issue** (commit 4f3425a) / **修复中文路径乱码问题** (commit 4f3425a)
-  - 🔧 Fixed Chinese path encoding issues passed to cv2 and rawpy / 修正输入到 cv2 和 rawpy 的图片路径中文乱码问题
-- **🌍 Fixed i18n output encoding issue** (commit 6b3e847) / **修复 i18n 输出编码问题** (commit 6b3e847)
-  - 🔧 Fixed non-Unicode encoding output for internationalized text / 修复国际化文本非 Unicode 编码输出问题
+## 5. 构建与发布改进 / Build & Packaging
 
-### 5. 💻 Platform Compatibility Fixes / 平台兼容性修复
+- **Windows CUDA Patch 构建支持**：补齐 Windows CUDA Patch 的构建链路，为 CPU 主包 + CUDA 补丁的交付方式打基础。
+- **安装包元数据与标记修复**：补强 Windows 安装流程中的版本、安装标记与提交信息写入逻辑。
+- **构建日志编码修复**：修复 Windows 构建日志在某些终端环境下的编码显示问题。
+- **`COMMIT_HASH` 获取优先级调整**：让发布脚本获取提交信息的行为更稳定，减少版本号或产物命名错位。
+- **新增 `pi-heif` 依赖**：补齐 HEIF 相关依赖，改进部分平台上的图像格式支持与打包兼容性。
+- **CI 与发布流程清理**：移除部分冗余发布字段，并新增安全扫描工作流，提升发布链路可维护性。
 
-#### 🍎 macOS
+## 6. 说明 / Notes
 
-- **🔒 Fixed macOS packaged app permission crash** (commit 5239abb) / **修复 macOS 打包应用权限崩溃** (commit 5239abb)
-  - 🔧 Resolved permission issues with packaged macOS ONNX app / 解决打包版 macOS ONNX 应用权限问题
-- **📂 Fixed macOS GUI startup directory issue** (commit 7e58bea) / **修复 macOS GUI 启动目录问题** (commit 7e58bea)
-  - 🏠 Set CWD to user home directory to avoid YOLO runs/ write failure / 设置 CWD 为用户主目录，避免 YOLO runs/ 写入失败
-- **📋 Fixed macOS QComboBox unclickable issue** (commit 458073c) / **修复 macOS QComboBox 不可点击问题** (commit 458073c)
-  - 🎨 Aligned QComboBox CSS with FilterPanel / 调整 QComboBox CSS 与 FilterPanel 对齐
-  - 🔧 Fixed macOS dropdown menu unclickable issue / 修复 macOS 下拉菜单不可点击问题
-- **📂 Fixed macOS packaged resource path issue** (commit 9d58ddd) / **修复 macOS 打包资源路径问题** (commit 9d58ddd)
-  - 🔧 Resolved correct PyInstaller BUNDLE data path issue / 解决正确的 PyInstaller BUNDLE 数据路径问题
-- **📂 Fixed packaged app database path issue** (commit 6e37f8d) / **修复打包应用数据库路径问题** (commit 6e37f8d)
-  - 🔧 Use `sys._MEIPASS` in frozen app for `birdname.db` path / 在冻结应用中使用 `sys._MEIPASS` 处理 `birdname.db` 路径
-- **📦 Added birdname.db to packaged resources** (commit 68fa1cf) / **添加 birdname.db 到打包资源** (commit 68fa1cf)
-  - 📦 Added `ioc/birdname.db` to bundle, fixed bird name query display empty issue / 将 `ioc/birdname.db` 加入 bundle，修复查询鸟名显示为空的问题
-
-#### 🪟 Windows
-
-- **📝 Updated Inno Setup version script** (not listed separately in commit) / **更新 Inno Setup 版本脚本** (commit 中未单独列出)
-  - 🔧 Supports simultaneous update of COMMIT\_HASH in `core/build_info.py` / 支持同时更新 `core/build_info.py` 的 COMMIT\_HASH
-  - 🔧 Improved OutputBaseFilename matching logic / 改进 OutputBaseFilename 匹配逻辑
-
-### 6. 🔄 Process Management Fixes / 进程管理修复
-
-- **✅ Ensure ExifTool process proper cleanup** (commit c69277f) / **确保 ExifTool 进程正确清理** (commit c69277f)
-  - 🔧 Optimized low-level management to ensure complete termination of background resident ExifTool service on app exit / 优化底层管理，确保应用退出时完全终止后台常驻的 ExifTool 服务
-
-### 7. 🧹 Other Fixes / 其他修复
-
-- **🗑️ Removed duplicate root-level birdname.db** (commit 8b1e1f2) / **移除重复的 root-level birdname.db** (commit 8b1e1f2)
-  - 📂 `ioc/birdname.db` is the official working copy / `ioc/birdname.db` 为正式使用的副本
-- **🔥 Removed PyTorch models from download list** (commit 2477d46) / **移除 PyTorch 模型从下载列表** (commit 2477d46)
-  - 📦 Nightly branch is ONNX-only, no longer provides PyTorch models / Nightly 分支为 ONNX-only，不再提供 PyTorch 模型
-- **🔧 Fixed ONNX CPU inference message** (commit 6c31cf7) / **修复 ONNX CPU 推理消息** (commit 6c31cf7)
-  - 📝 Updated related prompt messages / 更新相关提示信息
-
-***
-
-## ✅ Validation Requirements / 验证要求
-
-According to project rules, this version includes the following validations: / 根据项目规则，本版本包含以下验证：
-
-- ✅ Python syntax check / Python 语法检查
-- ✅ Chinese metadata write verification / 中文元数据写入验证
-- ✅ SQLite thread-safe handling / SQLite 线程安全处理
-- ✅ ExifTool process safe shutdown / ExifTool 进程安全关闭
-- ✅ Cross-platform path compatibility / 跨平台路径兼容性
-
-***
-
-## 📋 Upgrade Recommendations / 升级建议
-
-1. **🍎 macOS Users / macOS 用户**: First launch may require permission in "System Settings > Privacy & Security" / 首次打开可能需要在"系统设置 > 隐私与安全性"中允许运行
-2. **🪟 Windows Users / Windows 用户**: If blocked by antivirus, please add to trust / 如遇杀毒软件拦截，请添加信任
-
-***
-
-## 🆘 Technical Support / 技术支持
-
-If you encounter any issues, please reach out via: / 如遇问题，请通过以下方式获取帮助：
-
-- 🐙 GitHub Issues: <https://github.com/jamesphotography/SuperPicky/issues>
-
+- 本日志按 **当前 Nightly 的最终保留状态** 整理，不逐条枚举所有提交。
+- 已被回滚或未最终保留的尝试性工作，例如 ONNX 主线切换、ONNX 专用打包链路，以及中途撤回的 resume tracking，不作为现有功能写入。
+- 如果后续确定新的正式版本号，可以在此基础上再整理成正式版 Release Notes。
