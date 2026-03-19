@@ -1,6 +1,6 @@
 # SuperPicky Release Notes
 
-## V4.1.0 (2026-02-25) - Result Browser & HEIF Support / 结果浏览器与 HEIF 支持
+## V4.2.0 (2026-03-07) - Result Browser & HEIF Support / 结果浏览器与 HEIF 支持
 
 ### New Features
 - **[🆕 UI] Result Browser (选鸟结果浏览器)**:
@@ -186,7 +186,7 @@ This release brings a major architectural overhaul, migrating from CSV to SQLite
 
 ---
 
-## Downloads (Latest: V4.1.0)
+## Downloads (Latest: V4.2.0)
 
 ### macOS Apple Silicon (M1/M2/M3/M4)
 - GitHub: [SuperPicky_v4.1.0_arm64_c869d64.dmg](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_arm64_c869d64.dmg)
@@ -200,7 +200,7 @@ This release brings a major architectural overhaul, migrating from CSV to SQLite
 - 百度网盘: [SuperPicky_v4.1.0_Intel_c869d64.dmg](https://pan.baidu.com/s/1lNz2mBUEee8qqrd95rPJsA?pwd=3821) 提取码: 3821
 - 夸克网盘: [SuperPicky_v4.1.0_Intel_c869d64.dmg](https://pan.quark.cn/s/1b5d87b74059)
 
-### Windows (v4.1.0)
+### Windows (v4.2.0)
 
 **CUDA-GPU Version**
 - [百度网盘](https://pan.baidu.com/s/1XBaGXPim_WzjpNBgG-altg?pwd=c2a6) 提取码: c2a6

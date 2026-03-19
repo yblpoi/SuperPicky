@@ -49,6 +49,8 @@ all_datas = [
     (os.path.join(base_path, 'birdid/data'), 'birdid/data'),
     # V4.0.0: Lightroom 插件
     (os.path.join(base_path, 'SuperBirdIDPlugin.lrplugin'), 'SuperBirdIDPlugin.lrplugin'),
+    # V4.2.x: 鸟名查询数据库 (ioc/birdname.db)
+    (os.path.join(base_path, 'ioc'), 'ioc'),
 ]
 
 # 添加动态收集的数据
@@ -121,7 +123,16 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['pyi_rth_cv2.py'] if os.path.exists('pyi_rth_cv2.py') else [],
-    excludes=['PyQt5', 'PyQt6', 'tkinter'],
+    excludes=[
+        'PyQt5', 'PyQt6', 'tkinter',
+        # 僵尸依赖拦截：polars 仅用于 ultralytics W&B 训练回调，生产推理不触发
+        'polars',
+        # 防御性排除：facexlib/datasets 已卸载，防止意外重装时被打入包
+        'numba', 'llvmlite',
+        'pyarrow',
+        'facexlib',
+        'datasets',
+    ],
     noarchive=False,
     optimize=0,
 )

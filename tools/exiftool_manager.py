@@ -18,6 +18,8 @@ import time
 import threading
 import queue
 
+import atexit
+
 class ExifToolManager:
     """ExifTool管理器 - 使用本地打包的exiftool"""
 
@@ -39,6 +41,9 @@ class ExifToolManager:
         self._stdout_queue = None
         self._reader_thread = None
         self._lock = threading.Lock()
+        
+        # 注册退出清理
+        atexit.register(self.shutdown)
 
     def _get_exiftool_path(self) -> str:
         """获取exiftool可执行文件路径"""
@@ -237,26 +242,42 @@ class ExifToolManager:
             )
             self._reader_thread.start()
             
-            print("🚀 ExifTool persistent process started (threaded read)")
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 ExifTool persistent process started (PID: {self._process.pid}, threaded read)")
         except Exception as e:
-            print(f"❌ Failed to start ExifTool process: {e}")
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ❌ Failed to start ExifTool process: {e}")
             self._process = None
 
     def _stop_process(self):
         """停止常驻进程"""
         if self._process:
+            pid = self._process.pid
             try:
                 self._process.stdin.write(b'-stay_open\nFalse\n')
                 self._process.stdin.flush()
                 self._process.wait(timeout=2)
-            except Exception:
-                pass
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ ExifTool process (PID: {pid}) stopped gracefully")
+            except Exception as e:
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⚠️  ExifTool process (PID: {pid}) stop failed: {e}")
             finally:
                 if self._process.poll() is None:
-                    self._process.kill()
+                    try:
+                        self._process.kill()
+                        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ ExifTool process (PID: {pid}) killed")
+                    except Exception as e:
+                        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⚠️  ExifTool process (PID: {pid}) kill failed: {e}")
                 self._process = None
                 self._stdout_queue = None
                 self._reader_thread = None
+    
+    def shutdown(self):
+        """关闭ExifTool管理器，停止所有相关进程"""
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🔄 ExifToolManager shutting down...")
+        self._stop_process()
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ ExifToolManager shutdown completed")
+    
+    def __del__(self):
+        """析构函数，确保进程被关闭"""
+        self.shutdown()
 
     def _read_until_ready(self, timeout=10.0) -> bytes:
         """从队列读取直到 {ready}，支持超时"""

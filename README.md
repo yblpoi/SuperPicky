@@ -1,6 +1,6 @@
 # SuperPicky - AI Bird Photo Culling Tool 🦅
 
-[![Version](https://img.shields.io/badge/version-4.1.0-blue.svg)](https://github.com/jamesphotography/SuperPicky)
+[![Version](https://img.shields.io/badge/version-4.2.0-blue.svg)](https://github.com/jamesphotography/SuperPicky)
 [![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey.svg)](https://github.com/jamesphotography/SuperPicky/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Build](https://github.com/jamesphotography/SuperPicky/actions/workflows/build-release.yml/badge.svg)](https://github.com/jamesphotography/SuperPicky/actions/workflows/build-release.yml)
@@ -64,25 +64,25 @@ Automatically set thresholds based on your experience:
 ## 📥 Downloads
 
 ### macOS
-**Apple Silicon (M1/M2/M3/M4) (v4.1.0 LTS)**
+**Apple Silicon (M1/M2/M3/M4) (v4.2.0)**
 - [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_arm64_c869d64.dmg)
 - [Google Drive (Mirror)](https://drive.google.com/file/d/1odYNFvtYZa8pAO_bYZZCh5FZ6v0ggxFQ)
 - [Baidu Netdisk](https://pan.baidu.com/s/1xzex0UrSDiZeWyLuYRSqNg?pwd=t6c4) Code: t6c4
 - [Quark](https://pan.quark.cn/s/625a2dac438a)
 
-**Intel (Pre-2020 Mac) (v4.1.0 LTS)**
+**Intel (Pre-2020 Mac) (v4.2.0)**
 - [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_Intel_c869d64.dmg)
 - [Google Drive (Mirror)](https://drive.google.com/file/d/1dPdCoObVLuxy9ks_sYjbfSR4bI3A-IPD)
 - [Baidu Netdisk](https://pan.baidu.com/s/1lNz2mBUEee8qqrd95rPJsA?pwd=3821) Code: 3821
 - [Quark](https://pan.quark.cn/s/1b5d87b74059)
 
 ### Windows
-**CUDA-GPU Version (v4.1.0 Beta)**
+**CUDA-GPU Version (v4.2.0 Beta)**
 - [Baidu Netdisk](https://pan.baidu.com/s/1XBaGXPim_WzjpNBgG-altg?pwd=c2a6) Code: c2a6
 - [Google Drive (Mirror)](https://drive.google.com/file/d/1IKSxB3KbQdDO7VhnsGnHjOb2EgqZIgSB/view?usp=sharing)
 - [Quark](https://pan.quark.cn/s/d15276717367)
 
-**CPU Version (v4.1.0 LTS)**
+**CPU Version (v4.2.0)**
 - [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_Setup_Win64_4.1.0_242f4be.exe)
 - [Baidu Netdisk](https://pan.baidu.com/s/1dle-dGbKx5_On5cfdaaLXQ?pwd=872v) Code: 872v
 - [Google Drive (Mirror)](https://drive.google.com/file/d/1nTcgQdUqotu04kVkWUZqENnQtn573uzx)

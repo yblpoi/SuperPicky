@@ -170,7 +170,7 @@ class _FullscreenImageLabel(QLabel):
         self._focus_x: Optional[float] = None
         self._focus_y: Optional[float] = None
         self._focus_status: Optional[str] = None
-        self._focus_visible: bool = False  # 初始关闭，与按钮 inactive 初始状态同步
+        self._focus_visible: bool = True  # 默认显示焦点叠加
 
         # 缩放/平移状态
         self._fit_mode: bool = True
@@ -766,8 +766,8 @@ class FullscreenViewer(QWidget):
         self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
         h.addWidget(self._focus_btn)
-        # 初始状态：焦点关闭 → inactive 样式
-        self._update_focus_btn_style(False)
+        # 初始状态：焦点开启 → active 样式
+        self._update_focus_btn_style(True)
 
         # 功能2：锁定缩放按钮
         self._lock_zoom_btn = QPushButton("🔓 锁定缩放")

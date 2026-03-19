@@ -91,6 +91,9 @@ class AdvancedConfig:
         "flight_check": False,   # 飞鸟检测默认关闭（开启后速度较慢，用户可手动开启）
         "burst_check": False,    # 连拍检测默认关闭（开启后速度较慢，用户可手动开启）
         "exposure_check": False, # 曝光检测默认关闭
+
+        # 最近选鸟目录历史（最多保留 10 个，按最近使用时间倒序）
+        "recent_directories": [],
     }
 
     def __init__(self, config_file=None):
@@ -384,6 +387,27 @@ class AdvancedConfig:
 
     def set_exposure_check(self, value):
         self.config["exposure_check"] = bool(value)
+
+    # ──────────────────────────────────────────────
+    # 最近选鸟目录历史
+    # ──────────────────────────────────────────────
+    def get_recent_directories(self) -> list:
+        """返回全部历史目录列表（不过滤），最多 10 条，供菜单使用。"""
+        return list(self.config.get("recent_directories", []))
+
+    def get_available_recent_directories(self, n: int = 3) -> list:
+        """返回当前可访问的最近目录（os.path.isdir 过滤），最多 n 条，供地址栏弹出使用。"""
+        return [
+            d for d in self.config.get("recent_directories", [])
+            if os.path.isdir(d)
+        ][:n]
+
+    def add_recent_directory(self, directory: str) -> None:
+        """将目录插入历史列表头部，去重，最多保留 10 条，并保存。"""
+        dirs = [d for d in self.config.get("recent_directories", []) if d != directory]
+        dirs.insert(0, directory)
+        self.config["recent_directories"] = dirs[:10]
+        self.save()
 
     def get_dict(self):
         """获取配置字典（用于传递给其他模块）"""

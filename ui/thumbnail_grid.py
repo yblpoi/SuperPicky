@@ -144,15 +144,15 @@ class ThumbnailLoader(QThread):
         if ydp and os.path.exists(ydp):
             candidates.append(ydp)
 
-        # 2. debug_crop_path（裁切图，备用）
-        dcp = photo.get("debug_crop_path")
-        if dcp and os.path.exists(dcp):
-            candidates.append(dcp)
-
-        # 3. temp_jpeg_path（全图 JPEG 预览）
+        # 2. temp_jpeg_path（全图 JPEG 预览）
         tjp = photo.get("temp_jpeg_path")
         if tjp and os.path.exists(tjp):
             candidates.append(tjp)
+
+        # 3. debug_crop_path（裁切图，备用）
+        dcp = photo.get("debug_crop_path")
+        if dcp and os.path.exists(dcp):
+            candidates.append(dcp)
 
         # 4. original_path（直接找原始 JPG）
         op = photo.get("original_path") or photo.get("current_path")

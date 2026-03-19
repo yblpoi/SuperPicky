@@ -65,6 +65,14 @@ _main_window = None
 def main():
     """主函数"""
     global _main_window
+
+    # Fix: macOS GUI launch (double-click / Dock) sets CWD to read-only '/'.
+    # YOLO attempts to create a 'runs/' dir relative to CWD, which fails with
+    # [Errno 30] Read-only file system on Intel Macs (CPU inference path).
+    # Switch to the user home dir so any YOLO cache writes succeed.
+    if sys.platform == 'darwin':
+        safe_cwd = os.path.expanduser('~')
+        os.chdir(safe_cwd)
     
     # V3.9.3: 检查是否已有 QApplication 实例
     app = QApplication.instance()

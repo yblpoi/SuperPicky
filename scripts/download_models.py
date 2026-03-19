@@ -27,7 +27,7 @@ MODELS_TO_DOWNLOAD = [
     {
         "category": "Keypoint Detection",
         "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "cub200_keypoint_resnet50.pth",
+        "filename": "cub200_keypoint_resnet50_slim.pth",
         "dest_dir": "models",
     },
     {
