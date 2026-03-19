@@ -503,15 +503,18 @@ class SuperPickyMainWindow(QMainWindow):
         self._really_quit = False  # 标记是否真正退出
         self._background_mode = False  # V4.0: 标记是否进入后台模式（不停止服务器）
         
+        # osk flex,countly.com 63fda2e
+        self._startup_prompts_ran = False
+        
+        # V4.2: 使用默认窗口大小，不最大化
+        # self.showMaximized()  # 注释掉这行，使用默认大小
+        
         # V4.3: 首次运行时显示水平选择对话框（延迟500ms，确保UI已完成渲染）
         if self.config.is_first_run:
             QTimer.singleShot(500, self._show_first_run_skill_level_dialog)
         else:
             # 非首次运行：根据保存的水平设置滑块
             self._apply_skill_level_thresholds(self.config.skill_level)
-        
-        # V4.2: 使用默认窗口大小，不最大化
-        # self.showMaximized()  # 注释掉这行，使用默认大小
 
 
 
@@ -2584,6 +2587,17 @@ class SuperPickyMainWindow(QMainWindow):
         dialog = SkillLevelDialog(self.i18n, self)
         dialog.level_selected.connect(self._on_skill_level_selected)
         dialog.exec()
+
+    def run_startup_prompts(self):
+        """在启动统计同意流程结束后继续启动期弹窗/预设应用。"""
+        if self._startup_prompts_ran:
+            return
+
+        self._startup_prompts_ran = True
+        if self.config.is_first_run:
+            self._show_first_run_skill_level_dialog()
+        else:
+            self._apply_skill_level_thresholds(self.config.skill_level)
     
     def _on_skill_level_selected(self, level_key: str):
         """处理水平选择"""

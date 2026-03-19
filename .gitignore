@@ -28,6 +28,8 @@ temp_file_manager.py
 *.csv
 .DS_Store
 .env
+_telemetry_build.py
+app_user_stat/_telemetry_build.py
 
 # 开发和调试文档
 BUILD_README.md
