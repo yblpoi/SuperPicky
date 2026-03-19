@@ -106,7 +106,7 @@ a = Analysis(
         'multiprocessing',
         'multiprocessing.spawn',
         # V3.9.5: 更新检测模块
-        'update_checker',
+        'tools.update_checker',
         'packaging',
         'packaging.version',
         # V4.0.0: 鸟类识别模块

@@ -837,15 +837,17 @@ NOTARIZE_OUTPUT=$(xcrun notarytool submit "${DMG_PATH}" \
     --apple-id "${APPLE_ID}" \
     --password "${APP_PASSWORD}" \
     --team-id "${TEAM_ID}" \
-    --wait 2>&1)
+    --wait \
+    --output-format json 2>&1)
 
 echo "${NOTARIZE_OUTPUT}"
 
-if echo "${NOTARIZE_OUTPUT}" | grep -q "status: Accepted"; then
+if echo "${NOTARIZE_OUTPUT}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"Accepted"'; then
     log_success "公证成功！"
     
     log_info "装订公证票据..."
     xcrun stapler staple "${DMG_PATH}"
+    xcrun stapler validate "${DMG_PATH}"
     
     log_success "✅ V${VERSION} 打包发布全部完成！"
     log_info "最终文件: ${DMG_PATH}"
