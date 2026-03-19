@@ -1,4 +1,4 @@
-name: Build and Release SuperPicky Legacy CPU
+name: Build and Release SuperPicky CPU
 
 on:
   workflow_dispatch:
@@ -12,6 +12,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      GITCODE_REPO_URL: ${{ secrets.GITCODE_REPO_URL }}
 
     steps:
       - name: Checkout repository
@@ -22,13 +25,20 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements_base.txt
 
       - name: Resolve release metadata
         id: release_meta
         shell: pwsh
         run: |
-          $rawVersion = "${{ github.event.inputs.version }}"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $rawVersion = "${{ github.event.inputs.version }}"
+          } else {
+            $rawVersion = "${{ github.ref_name }}"
+          }
+
           if (-not $rawVersion) {
             throw "Release version is required."
           }
@@ -41,17 +51,18 @@ jobs:
         shell: pwsh
         run: python -m venv .venv
 
-      - name: Install dependencies
+      - name: Install CPU build dependencies
         shell: pwsh
         run: |
           .\.venv\Scripts\python.exe -m pip install --upgrade pip
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+          .\.venv\Scripts\python.exe -m pip install requests
 
-      - name: Build CPU version
+      - name: Build CPU release payloads
         shell: pwsh
         run: .\.venv\Scripts\python.exe build_release_win.py --build-type cpu --copy-dir output --debug
 
-      - name: Create installer with Inno Setup
+      - name: Create CPU installer with Inno Setup
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
           path: ./output/installer_cpu/SuperPicky.iss
@@ -82,3 +93,10 @@ jobs:
           body_path: ChangeLog.md
           files: |
             release_assets/*
+
+      - name: Upload assets to GitCode Release
+        if: env.GITCODE_TOKEN != '' && env.GITCODE_REPO_URL != ''
+        shell: pwsh
+        env:
+          GITCODE_RELEASE_NAME: ${{ steps.release_meta.outputs.name }}
+        run: .\.venv\Scripts\python.exe scripts\upload_to_gitcode.py

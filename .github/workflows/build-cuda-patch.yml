@@ -15,6 +15,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      GITCODE_REPO_URL: ${{ secrets.GITCODE_REPO_URL }}
 
     steps:
       - name: Checkout repository
@@ -27,6 +30,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             requirements.txt
+            requirements_base.txt
             requirements_cuda.txt
 
       - name: Resolve release metadata
@@ -51,11 +55,12 @@ jobs:
         shell: pwsh
         run: python -m venv .venv
 
-      - name: Install CPU build dependencies
+      - name: Install build dependencies
         shell: pwsh
         run: |
           .\.venv\Scripts\python.exe -m pip install --upgrade pip
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+          .\.venv\Scripts\python.exe -m pip install requests
 
       - name: Build CPU and CUDA patch release payloads
         shell: pwsh
@@ -80,8 +85,8 @@ jobs:
 
           $assetPatterns = @(
             "output/SuperPicky_Win64_*_cpu.zip",
-            "output/cuda_patch_installer/Output/SuperPicky_CUDA_Patch_Win64_*.exe",
             "output/installer_cpu/Output/SuperPicky_Setup_Win64_*.exe",
+            "output/cuda_patch_installer/Output/SuperPicky_CUDA_Patch_Win64_*.exe",
             "output/SuperPicky_Win64_*_cuda_patch.zip"
           )
 
@@ -101,3 +106,11 @@ jobs:
           body_path: ChangeLog.md
           files: |
             release_assets/*
+
+      - name: Upload assets to GitCode Release
+        if: env.GITCODE_TOKEN != '' && env.GITCODE_REPO_URL != ''
+        shell: pwsh
+        env:
+          GITCODE_RELEASE_NAME: ${{ steps.release_meta.outputs.name }}
+          GITCODE_TAG: ${{ steps.release_meta.outputs.tag }}
+        run: .\.venv\Scripts\python.exe scripts\upload_to_gitcode.py
