@@ -25,7 +25,8 @@ class FileConfig:
     def __post_init__(self):
         if self.RAW_EXTENSIONS is None:
             self.RAW_EXTENSIONS = ['.nef', '.cr2', '.cr3', '.arw', '.raf', 
-                                 '.orf', '.rw2', '.pef', '.dng', '.3fr', '.iiq']
+                                 '.orf', '.rw2', '.pef', '.dng', '.3fr', '.iiq',
+                                 '.heic', '.heif', '.hif']
         if self.JPG_EXTENSIONS is None:
             self.JPG_EXTENSIONS = ['.jpg', '.jpeg']
 

@@ -69,7 +69,7 @@ curl http://127.0.0.1:5156/health
 **请求体**:
 ```json
 {
-  "image_path": "/path/to/image.jpg",    // 选项1: 图片路径
+  "image_path": "/path/to/image.jpg",    // 选项1: 图片路径（支持 JPG/JPEG、RAW、HIF/HEIC/HEIF）
   "image_base64": "base64_encoded...",   // 选项2: Base64编码图片
   "use_yolo": true,                      // 可选，默认true
   "use_gps": true,                       // 可选，默认true
@@ -116,6 +116,11 @@ curl http://127.0.0.1:5156/health
 curl -X POST http://127.0.0.1:5156/recognize \
   -H "Content-Type: application/json" \
   -d '{"image_path": "/path/to/bird.jpg", "top_k": 3}'
+
+# HEIC/HEIF/HIF 也可直接识别（按 RAW-like 流程处理）
+curl -X POST http://127.0.0.1:5156/recognize \
+  -H "Content-Type: application/json" \
+  -d '{"image_path": "/path/to/bird.heic", "top_k": 3}'
 
 # 使用Python requests
 import requests
@@ -323,6 +328,9 @@ curl -X POST http://127.0.0.1:5156/exif/write-title \
 ```bash
 # 识别单张图片并写入EXIF
 python api_client_example.py /path/to/bird.jpg
+
+# 识别 HEIC/HEIF/HIF 图片
+python api_client_example.py /path/to/bird.heic
 ```
 
 ### 主要功能

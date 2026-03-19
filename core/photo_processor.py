@@ -839,7 +839,8 @@ class PhotoProcessor:
         """并行转换RAW文件"""
         raw_start = time.time()
         import multiprocessing
-        max_workers = min(4, multiprocessing.cpu_count())
+        cap = get_advanced_config().raw_max_concurrency
+        max_workers = min(cap, max(1, multiprocessing.cpu_count()))
         
         self._log(self.i18n.t("logs.raw_conversion_start", count=len(raw_files_to_convert), threads=max_workers))
         

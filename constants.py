@@ -7,7 +7,7 @@ SuperPicky 常量定义
 
 # 应用版本号
 # 应用版本号
-APP_VERSION = "4.2.0"
+APP_VERSION = "4.1.0"
 
 
 # 评分对应的文件夹名称映射（向后兼容，默认中文）
@@ -57,8 +57,10 @@ def get_rating_folder_name(rating: int) -> str:
     folders = get_rating_folder_names()
     return folders.get(rating, folders.get(0, "0star_reject"))
 
-# 支持的 RAW 文件扩展名（小写）
-RAW_EXTENSIONS = ['.nef', '.cr2', '.cr3', '.arw', '.raf', '.orf', '.rw2', '.pef', '.dng', '.3fr', '.iiq']
+# 支持的 RAW/RAW-like 文件扩展名（小写）
+# 说明：HEIC/HEIF/HIF 在处理流程中按 RAW-like 路径处理（生成临时预览、保留原文件）
+RAW_EXTENSIONS = ['.nef', '.cr2', '.cr3', '.arw', '.raf', '.orf', '.rw2', '.pef', '.dng', '.3fr', '.iiq',
+                  '.heic', '.heif', '.hif']
 
 # 支持的 HEIF 文件扩展名（小写）- Sony HIF / Apple HEIC 等
 HEIF_EXTENSIONS = ['.hif', '.heif', '.heic']

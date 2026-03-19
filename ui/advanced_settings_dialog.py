@@ -225,6 +225,16 @@ class AdvancedSettingsDialog(QDialog):
             format_func=lambda v: f"{v} fps"
         )
 
+        # RAW 转换最大并发数
+        self.vars["raw_max_concurrency"] = self._create_slider_setting(
+            layout,
+            self.i18n.t("advanced_settings.raw_max_concurrency"),
+            self.i18n.t("advanced_settings.raw_max_concurrency_hint"),
+            min_val=1, max_val=32, default=16,
+            step=1,
+            format_func=lambda v: self.i18n.t("advanced_settings.raw_max_concurrency_value", n=v)
+        )
+
         layout.addStretch()
         return page
 
@@ -532,6 +542,7 @@ class AdvancedSettingsDialog(QDialog):
         self.vars["min_sharpness"].setValue(int(self.config.min_sharpness))
         self.vars["min_nima"].setValue(int(self.config.min_nima * 10))
         self.vars["burst_fps"].setValue(int(self.config.burst_fps))
+        self.vars["raw_max_concurrency"].setValue(int(self.config.raw_max_concurrency))
         self.vars["birdid_confidence"].setValue(int(self.config.birdid_confidence))
 
         # 加载鸟种英文名格式
@@ -585,12 +596,14 @@ class AdvancedSettingsDialog(QDialog):
         min_sharpness = self.vars["min_sharpness"].value()
         min_nima = self.vars["min_nima"].value() / 10.0
         burst_fps = self.vars["burst_fps"].value()
+        raw_max_concurrency = self.vars["raw_max_concurrency"].value()
         birdid_confidence = self.vars["birdid_confidence"].value()
 
         self.config.set_min_confidence(min_confidence)
         self.config.set_min_sharpness(min_sharpness)
         self.config.set_min_nima(min_nima)
         self.config.set_burst_fps(burst_fps)
+        self.config.set_raw_max_concurrency(raw_max_concurrency)
         self.config.set_birdid_confidence(birdid_confidence)
 
         # 保存鸟种英文名格式

@@ -32,7 +32,10 @@ class AdvancedConfig:
         # 连拍检测设置 V4.0.4
         "burst_fps": 10,  # 连拍速度 (4-20张/秒) - 拍摄速度快于此值视为连拍
         "burst_min_count": 4,         # 连拍最少张数 (3-10) - 至少此数量连续照片才算连拍组
-        
+
+        # RAW/HEIC 转换并发 (1-32) - 并行转换时的最大线程数上限
+        "raw_max_concurrency": 16,
+
         # 鸟种识别设置 V4.2
         "birdid_confidence": 70,      # 识别置信度阈值 (50-95) - 低于此值不写入EXIF
 
@@ -180,7 +183,12 @@ class AdvancedConfig:
     @property
     def burst_min_count(self):
         return self.config.get("burst_min_count", 4)
-    
+
+    @property
+    def raw_max_concurrency(self):
+        """RAW/HEIC 并行转换最大线程数 (1-32)"""
+        return self.config.get("raw_max_concurrency", 16)
+
     @property
     def birdid_confidence(self):
         return self.config.get("birdid_confidence", 70)
@@ -227,7 +235,11 @@ class AdvancedConfig:
     def set_burst_min_count(self, value):
         """设置连拍最少张数 (3-10)"""
         self.config["burst_min_count"] = max(3, min(10, int(value)))
-    
+
+    def set_raw_max_concurrency(self, value):
+        """设置 RAW/HEIC 转换最大并发数 (1-32)"""
+        self.config["raw_max_concurrency"] = max(1, min(32, int(value)))
+
     def set_birdid_confidence(self, value):
         """设置鸟种识别置信度阈值 (50-95)"""
         self.config["birdid_confidence"] = max(50, min(95, int(value)))
