@@ -33,15 +33,6 @@ def _torch_load_compat(path: str, *, map_location: str, weights_only: bool):
         return torch.load(path, map_location=map_location)
 
 
-def _should_retry_without_weights_only(error: Exception) -> bool:
-    message = str(error)
-    return (
-        "weights_only" in message
-        or "Weights only load failed" in message
-        or "WeightsUnpickler" in message
-    )
-
-
 def _extract_state_dict(loaded_obj):
     if isinstance(loaded_obj, dict):
         if "state_dict" in loaded_obj:
@@ -71,11 +62,11 @@ def _load_osea_checkpoint(model_path: str):
         )
     try:
         return _torch_load_compat(model_path, map_location="cpu", weights_only=True)
-    except Exception as e:
-        if _should_retry_without_weights_only(e):
-            print("[OSEA] weights_only=True 加载失败，回退 weights_only=False（仅限可信模型）")
-            return _torch_load_compat(model_path, map_location="cpu", weights_only=False)
-        raise
+    except TypeError as e:
+        raise RuntimeError(
+            "当前 PyTorch 版本不支持安全权重加载 (weights_only=True)，"
+            "请升级 PyTorch 后重试。"
+        ) from e
 
 # ==================== 路径配置 ====================
 

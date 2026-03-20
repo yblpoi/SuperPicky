@@ -111,7 +111,13 @@ class KeypointDetector:
             raise FileNotFoundError(f"关键点模型不存在: {self.model_path}")
         
         self.model = PartLocalizer()
-        checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=False)
+        try:
+            checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=True)
+        except TypeError as exc:
+            raise RuntimeError(
+                "当前 PyTorch 版本不支持安全权重加载 (weights_only=True)，"
+                "请升级 PyTorch 后重试。"
+            ) from exc
         
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             self.model.load_state_dict(checkpoint['model_state_dict'])
