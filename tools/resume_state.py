@@ -67,7 +67,8 @@ class ResumeStateManager:
         pending = [item for item in (state.get("pending_prefixes") or []) if item != prefix]
         state["pending_prefixes"] = pending
         total_files = int(state.get("total_files") or 0)
-        state["next_index"] = min(total_files + 1, total_files - len(pending) + 1) if total_files > 0 else 1
+        # state["next_index"] = min(total_files + 1, total_files - len(pending) + 1) if total_files > 0 else 1
+        state["next_index"] = total_files - len(pending) + 1 if total_files > 0 else 1
         if not pending:
             self.clear()
             return
