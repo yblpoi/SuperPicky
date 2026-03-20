@@ -15,9 +15,15 @@ import cv2
 import io
 import os
 import sys
-from typing import Optional, List, Dict, Tuple, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Tuple, Type, cast
 from tools.i18n import t as _t
 from config import get_best_device
+
+if TYPE_CHECKING:
+    import rawpy as rawpy_module
+    from birdid.avonet_filter import AvonetFilter
+    from birdid.bird_database_manager import BirdDatabaseManager
+    from ultralytics import YOLO as YOLOType
 
 # ==================== 设备配置 ====================
 
@@ -26,14 +32,21 @@ CLASSIFIER_DEVICE = get_best_device()
 # ==================== 可选依赖检测 ====================
 
 # RAW格式支持
+rawpy: Any = None
+imageio: Any = None
+RAWPY_UNSUPPORTED_ERROR: Type[Exception] = RuntimeError
+RAWPY_THUMB_FORMAT: Any = None
 try:
     import rawpy
     import imageio
+    RAWPY_UNSUPPORTED_ERROR = getattr(getattr(rawpy, '_rawpy', None), 'LibRawFileUnsupportedError', RuntimeError)
+    RAWPY_THUMB_FORMAT = getattr(rawpy, 'ThumbFormat', None)
     RAW_SUPPORT = True
 except ImportError:
     RAW_SUPPORT = False
 
 # YOLO检测支持
+YOLO: Any = None
 try:
     from ultralytics import YOLO
     YOLO_AVAILABLE = True
@@ -47,19 +60,25 @@ BIRDID_DIR = os.path.dirname(os.path.abspath(__file__))
 # 项目根目录
 PROJECT_ROOT = os.path.dirname(BIRDID_DIR)
 
+RESAMPLING_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+
 
 def get_birdid_path(relative_path: str) -> str:
     """获取 birdid 模块内的资源路径"""
     if getattr(sys, 'frozen', False):
         # PyInstaller 打包环境
-        return os.path.join(sys._MEIPASS, 'birdid', relative_path)
+        bundle_dir = getattr(sys, "_MEIPASS", None)
+        if bundle_dir:
+            return os.path.join(bundle_dir, 'birdid', relative_path)
     return os.path.join(BIRDID_DIR, relative_path)
 
 
 def get_project_path(relative_path: str) -> str:
     """获取项目根目录下的资源路径"""
     if getattr(sys, 'frozen', False):
-        return os.path.join(sys._MEIPASS, relative_path)
+        bundle_dir = getattr(sys, "_MEIPASS", None)
+        if bundle_dir:
+            return os.path.join(bundle_dir, relative_path)
     return os.path.join(PROJECT_ROOT, relative_path)
 
 
@@ -91,11 +110,11 @@ YOLO_MODEL_PATH = get_project_path('models/yolo11l-seg.pt')
 
 # ==================== 全局变量（懒加载）====================
 _classifier = None
-_db_manager = None
+_db_manager: "BirdDatabaseManager | Literal[False] | None" = None
 _yolo_detector = None
 
 # V4.0.5: 离线物种过滤
-_avonet_filter = None  # AvonetFilter 单例
+_avonet_filter: Optional["AvonetFilter"] = None  # AvonetFilter 单例
 
 
 # ==================== 模型加密解密 ====================
@@ -185,7 +204,7 @@ def get_bird_model():
     return get_classifier()
 
 
-def get_database_manager():
+def get_database_manager() -> Optional["BirdDatabaseManager"]:
     """懒加载数据库管理器"""
     global _db_manager
     if _db_manager is None:
@@ -208,7 +227,7 @@ def get_yolo_detector():
     return _yolo_detector
 
 
-def get_species_filter():
+def get_species_filter() -> Optional["AvonetFilter"]:
     """懒加载 AvonetFilter（单例模式）"""
     global _avonet_filter
     if _avonet_filter is None:
@@ -230,8 +249,8 @@ def get_species_filter():
 class YOLOBirdDetector:
     """YOLO 鸟类检测器"""
 
-    def __init__(self, model_path: str = None):
-        if not YOLO_AVAILABLE:
+    def __init__(self, model_path: Optional[str] = None):
+        if not YOLO_AVAILABLE or YOLO is None:
             self.model = None
             return
 
@@ -381,13 +400,13 @@ def load_image(image_path: str) -> Image.Image:
                     # 优先尝试提取内嵌的 JPEG 预览图
                     try:
                         thumb = raw.extract_thumb()
-                        if thumb.format == rawpy.ThumbFormat.JPEG:
+                        if RAWPY_THUMB_FORMAT and thumb.format == RAWPY_THUMB_FORMAT.JPEG:
                             # 直接使用内嵌的 JPEG
                             from io import BytesIO
                             img = Image.open(BytesIO(thumb.data)).convert("RGB")
                             print(_t("logs.raw_embedded_jpeg", w=img.size[0], h=img.size[1]))
                             return img
-                        elif thumb.format == rawpy.ThumbFormat.BITMAP:
+                        elif RAWPY_THUMB_FORMAT and thumb.format == RAWPY_THUMB_FORMAT.BITMAP:
                             # 位图格式
                             img = Image.fromarray(thumb.data).convert("RGB")
                             print(_t("logs.raw_embedded_bitmap", w=img.size[0], h=img.size[1]))
@@ -406,7 +425,7 @@ def load_image(image_path: str) -> Image.Image:
                     img = Image.fromarray(rgb)
                     print(_t("logs.raw_half_size", w=img.size[0], h=img.size[1]))
                     return img
-            except rawpy._rawpy.LibRawFileUnsupportedError:
+            except RAWPY_UNSUPPORTED_ERROR:
                 # LibRaw 不支持的格式（如 Sony A7M5 NeXt/Compressed RAW 2）
                 # 回退：使用 exiftool -b -JpgFromRaw 提取相机内嵌 JPEG
                 print(f"[RAW] rawpy 不支持此 RAW 格式，尝试 ExifTool JpgFromRaw 回退...")
@@ -427,25 +446,21 @@ def _load_raw_via_exiftool(image_path: str) -> "Image.Image":
     """
     import subprocess
     from io import BytesIO
+    from tools.exiftool_manager import get_exiftool_runtime
 
-    # 查找 exiftool（优先使用打包内的版本）
-    possible_paths = []
-    if getattr(sys, "frozen", False):
-        possible_paths.append(os.path.join(sys._MEIPASS, "exiftools_mac", "exiftool"))
-    possible_paths += [
-        os.path.join(PROJECT_ROOT, "exiftools_mac", "exiftool"),
-        "/opt/homebrew/bin/exiftool",
-        "/usr/local/bin/exiftool",
-        "exiftool",
-    ]
-    exiftool = next((p for p in possible_paths if os.path.isfile(p)), "exiftool")
+    try:
+        exiftool, exiftool_cwd = get_exiftool_runtime()
+    except Exception:
+        exiftool, exiftool_cwd = "exiftool", None
 
     # 依次尝试各种嵌入图像标签
     for tag in ["-JpgFromRaw", "-PreviewImage", "-ThumbnailImage"]:
         try:
             result = subprocess.run(
                 [exiftool, "-b", tag, image_path],
-                capture_output=True, timeout=15
+                capture_output=True,
+                timeout=15,
+                cwd=exiftool_cwd
             )
             if result.returncode == 0 and result.stdout and len(result.stdout) > 1000:
                 img = Image.open(BytesIO(result.stdout)).convert("RGB")
@@ -469,10 +484,13 @@ def _load_heif(image_path: str) -> "Image.Image":
     try:
         import pillow_heif
         heif_file = pillow_heif.read_heif(image_path)
+        heif_data = heif_file.data
+        if heif_data is None:
+            raise ValueError("HEIF 图像数据为空")
         img = Image.frombytes(
             heif_file.mode,
             heif_file.size,
-            heif_file.data,
+            heif_data,
             "raw",
         ).convert("RGB")
         print(f"[HEIF] pillow-heif \u89e3\u7801\u6210\u529f: {img.size[0]}x{img.size[1]}")
@@ -496,50 +514,23 @@ def extract_gps_from_exif(image_path: str) -> Tuple[Optional[float], Optional[fl
     """
     import subprocess
     import json as json_module
+    from tools.exiftool_manager import get_exiftool_runtime
     
     # 首先尝试使用 exiftool（支持 RAW 格式）
     try:
-        # 查找 exiftool
-        exiftool_paths = [
-            '/usr/local/bin/exiftool',
-            '/opt/homebrew/bin/exiftool',
-            'exiftool',  # 在 PATH 中查找
-        ]
-        
-        exiftool_path = None
-        for path in exiftool_paths:
-            try:
-                result = subprocess.run([path, '-ver'], capture_output=True, text=False, timeout=5)
-                if result.returncode == 0:
-                    # 解码输出
-                    stdout_bytes = result.stdout
-                    # 尝试多种编码解码
-                    decoded_output = None
-                    for encoding in ['utf-8', 'gbk', 'gb2312', 'latin-1']:
-                        try:
-                            decoded_output = stdout_bytes.decode(encoding)
-                            break
-                        except UnicodeDecodeError:
-                            continue
-                    
-                    if decoded_output is None:
-                        # 如果所有编码都失败，使用 latin-1 作为最后手段（不会失败）
-                        decoded_output = stdout_bytes.decode('latin-1')
-                    
-                    # 检查是否成功获取版本
-                    if decoded_output.strip():
-                        exiftool_path = path
-                        break
-            except:
-                continue
-        
+        try:
+            exiftool_path, exiftool_cwd = get_exiftool_runtime()
+        except Exception:
+            exiftool_path, exiftool_cwd = None, None
+
         if exiftool_path:
             # 使用 exiftool 提取 GPS 信息
             result = subprocess.run(
                 [exiftool_path, '-j', '-GPSLatitude', '-GPSLongitude', '-GPSLatitudeRef', '-GPSLongitudeRef', image_path],
                 capture_output=True,
                 text=False,  # 使用 bytes 模式，避免自动解码
-                timeout=10
+                timeout=10,
+                cwd=exiftool_cwd
             )
             
             if result.returncode == 0 and result.stdout:
@@ -598,7 +589,7 @@ def extract_gps_from_exif(image_path: str) -> Tuple[Optional[float], Optional[fl
     # 回退到 PIL（仅支持 JPEG 等常规格式）
     try:
         image = Image.open(image_path)
-        exif_data = image._getexif()
+        exif_data = image.getexif()
 
         if not exif_data:
             return None, None, "无EXIF数据"
@@ -648,9 +639,9 @@ def smart_resize(image: Image.Image, target_size: int = 224) -> Image.Image:
     max_dim = max(width, height)
 
     if max_dim < 1000:
-        return image.resize((target_size, target_size), Image.LANCZOS)
+        return image.resize((target_size, target_size), RESAMPLING_LANCZOS)
 
-    resized = image.resize((256, 256), Image.LANCZOS)
+    resized = image.resize((256, 256), RESAMPLING_LANCZOS)
     left = (256 - target_size) // 2
     top = (256 - target_size) // 2
     return resized.crop((left, top, left + target_size, top + target_size))
@@ -699,7 +690,7 @@ def predict_bird(
     top_k: int = 5,
     species_class_ids: Optional[Set[int]] = None,
     is_yolo_cropped: bool = False,
-    name_format: str = None
+    name_format: Optional[str] = None
 ) -> List[Dict]:
     """
     识别鸟类（OSEA ResNet34）
@@ -722,7 +713,8 @@ def predict_bird(
     if image.mode != 'RGB':
         image = image.convert('RGB')
     transform = OSEA_TRANSFORM_DIRECT if is_yolo_cropped else OSEA_TRANSFORM
-    input_tensor = transform(image).unsqueeze(0).to(CLASSIFIER_DEVICE)
+    image_tensor = cast(torch.Tensor, transform(image))
+    input_tensor = image_tensor.unsqueeze(0).to(CLASSIFIER_DEVICE)
 
     # 推理
     with torch.no_grad():
@@ -742,7 +734,7 @@ def predict_bird(
 
     results = []
     for i in range(len(top_indices)):
-        class_id = top_indices[i].item()
+        class_id = int(top_indices[i].item())
         confidence = top_probs[i].item() * 100
         # 置信度阈值：使用区域过滤时降低阈值以保留更多候选
         min_confidence = 0.3 if species_class_ids else 1.0
@@ -815,10 +807,10 @@ def identify_bird(
     use_yolo: bool = True,
     use_gps: bool = True,
     use_ebird: bool = True,
-    country_code: str = None,
-    region_code: str = None,
+    country_code: Optional[str] = None,
+    region_code: Optional[str] = None,
     top_k: int = 5,
-    name_format: str = None
+    name_format: Optional[str] = None
 ) -> Dict:
     """
     端到端鸟类识别
@@ -905,7 +897,9 @@ def identify_bird(
 
                     # 回退到区域代码（优先 eBird 离线物种列表，其次 Avonet 边界）
                     if species_class_ids is None and (region_code or country_code):
-                        effective_region = region_code or country_code
+                        effective_region = region_code if region_code is not None else country_code
+                        if effective_region is None:
+                            raise ValueError("effective_region should not be None here")
                         # 优先使用 eBird 离线物种 JSON（精确到州/省）
                         try:
                             ebird_ids, actual_region = species_filter.get_species_by_region_ebird(effective_region)

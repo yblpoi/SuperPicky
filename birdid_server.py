@@ -11,14 +11,16 @@ import os
 import sys
 import base64
 import tempfile
+import ipaddress
+import re
 from io import BytesIO
+from typing import Optional, Tuple
 
 # 确保模块路径正确
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tools.i18n import t
 
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from PIL import Image
 
 from birdid.bird_identifier import (
@@ -34,11 +36,100 @@ from birdid.bird_identifier import (
 
 # 创建 Flask 应用
 app = Flask(__name__)
-CORS(app)  # 允许跨域请求
 
 # 全局配置
 DEFAULT_PORT = 5156
 DEFAULT_HOST = '127.0.0.1'
+LOCAL_ALLOWED_ORIGIN_PATTERNS = (
+    re.compile(r'^http://127\.0\.0\.1(?::\d+)?$'),
+    re.compile(r'^http://localhost(?::\d+)?$'),
+    re.compile(r'^http://\[::1\](?::\d+)?$'),
+)
+ALLOWED_IMAGE_EXTENSIONS = frozenset({
+    '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.webp',
+    '.cr2', '.cr3', '.nef', '.nrw', '.arw', '.srf', '.dng',
+    '.raf', '.orf', '.rw2', '.pef', '.srw', '.raw', '.rwl',
+    '.3fr', '.fff', '.erf', '.mef', '.mos', '.mrw', '.x3f',
+    '.hif', '.heif', '.heic',
+})
+
+
+def _is_loopback_ip(value: str) -> bool:
+    """判断 IP 是否为本机 loopback 地址。"""
+    try:
+        ip = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        return ip.ipv4_mapped.is_loopback
+    return ip.is_loopback
+
+
+def is_loopback_host(host: str) -> bool:
+    """仅允许绑定 localhost / loopback。"""
+    if not host:
+        return False
+    normalized = host.strip().lower()
+    if normalized == 'localhost':
+        return True
+    return _is_loopback_ip(host.strip())
+
+
+def is_loopback_request() -> bool:
+    """仅允许来自本机的请求访问 API。"""
+    remote_addr = request.remote_addr
+    return bool(remote_addr) and _is_loopback_ip(remote_addr)
+
+
+def is_allowed_browser_origin(origin: str) -> bool:
+    """检查浏览器 Origin 是否属于本机来源。"""
+    if not origin:
+        return False
+    return any(pattern.match(origin) for pattern in LOCAL_ALLOWED_ORIGIN_PATTERNS)
+
+
+def validate_local_image_path(
+    user_input: str,
+    *,
+    allow_missing: bool = False
+) -> Tuple[Optional[str], Optional[str], int]:
+    """
+    规范化并校验本地图片路径。
+
+    Returns:
+        (normalized_path, error_message, status_code)
+    """
+    if not isinstance(user_input, str) or not user_input.strip():
+        return None, "Invalid image path", 400
+    if '\x00' in user_input:
+        return None, "Invalid image path", 400
+
+    normalized_path = os.path.realpath(os.path.abspath(os.path.expanduser(user_input.strip())))
+    extension = os.path.splitext(normalized_path)[1].lower()
+    if extension not in ALLOWED_IMAGE_EXTENSIONS:
+        return None, "Unsupported image file type", 400
+
+    if not allow_missing and not os.path.exists(normalized_path):
+        return None, "File not found", 404
+    if os.path.isdir(normalized_path):
+        return None, "Image path must point to a file", 400
+    if not allow_missing and not os.path.isfile(normalized_path):
+        return None, "Image path must point to a file", 400
+
+    return normalized_path, None, 200
+
+
+@app.after_request
+def apply_local_cors(response):
+    """仅为本机浏览器来源返回 CORS 头。"""
+    origin = request.headers.get('Origin')
+    if origin and is_allowed_browser_origin(origin):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Vary'] = 'Origin'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
 
 
 def get_gui_settings():
@@ -109,7 +200,7 @@ def get_gui_language():
     return None
 
 
-def update_gui_settings_from_gps(region_code: str, region_name: str = None):
+def update_gui_settings_from_gps(region_code: str, region_name: Optional[str] = None):
     """
     将 GPS 检测到的区域同步到 GUI 设置文件
     这样主界面的国家/地区选择会自动更新
@@ -227,6 +318,7 @@ def recognize_bird():
         }
     }
     """
+    temp_file = None
     try:
         data = request.get_json()
 
@@ -238,7 +330,6 @@ def recognize_bird():
         image = None
         image_path = data.get('image_path')
         image_base64 = data.get('image_base64')
-        temp_file = None
         
         # 日志：显示请求信息
         if image_path:
@@ -248,13 +339,14 @@ def recognize_bird():
 
         if image_path:
             # 从文件路径加载
-            if not os.path.exists(image_path):
-                print(t("server.file_not_found", path=image_path))
-                return jsonify({'success': False, 'error': t("server.file_not_found", path=image_path)}), 404
+            image_path, path_error, status_code = validate_local_image_path(image_path)
+            if path_error:
+                print(f"[API] ❌ invalid image_path: {path_error}")
+                return jsonify({'success': False, 'error': path_error}), status_code
         elif image_base64:
             # 从 Base64 解码
             try:
-                image_data = base64.b64decode(image_base64)
+                image_data = base64.b64decode(image_base64, validate=True)
                 image = Image.open(BytesIO(image_data))
 
                 # 创建临时文件用于 EXIF 读取
@@ -265,6 +357,10 @@ def recognize_bird():
                 return jsonify({'success': False, 'error': t("server.base64_decode_failed", error=e)}), 400
         else:
             return jsonify({'success': False, 'error': t("server.missing_params")}), 400
+
+        if image_path is None:
+            return jsonify({'success': False, 'error': t("server.missing_params")}), 400
+        safe_image_path = image_path
 
         # 获取参数
         use_yolo = data.get('use_yolo', True)
@@ -287,7 +383,7 @@ def recognize_bird():
         # 执行识别
         from advanced_config import get_advanced_config
         result = identify_bird(
-            image_path,
+            safe_image_path,
             use_yolo=use_yolo,
             use_gps=use_gps,
             top_k=top_k,
@@ -307,13 +403,6 @@ def recognize_bird():
                 print(t("server.log_no_result"))
         else:
             print(t("server.log_fail", error=result.get('error', 'Unknown')))
-
-        # 清理临时文件
-        if temp_file:
-            try:
-                os.unlink(temp_file.name)
-            except:
-                pass
 
         if not result['success']:
             return jsonify({
@@ -445,6 +534,16 @@ def recognize_bird():
             'success': False,
             'error': str(e),
         }), 500
+    finally:
+        if temp_file:
+            try:
+                temp_file.close()
+            except Exception:
+                pass
+            try:
+                os.unlink(temp_file.name)
+            except OSError:
+                pass
 
 
 @app.route('/exif/write-title', methods=['POST'])
@@ -466,12 +565,14 @@ def write_exif_title():
         if not image_path or not bird_name:
             return jsonify({'success': False, 'error': t("server.missing_required_params")}), 400
 
-        if not os.path.exists(image_path):
-            return jsonify({'success': False, 'error': t("server.file_not_found", path=image_path)}), 404
+        image_path, path_error, status_code = validate_local_image_path(image_path)
+        if path_error:
+            return jsonify({'success': False, 'error': path_error}), status_code
 
         from tools.exiftool_manager import get_exiftool_manager
         exiftool_mgr = get_exiftool_manager()
-        success = exiftool_mgr.set_metadata(image_path, {'Title': bird_name})
+        stats = exiftool_mgr.batch_set_metadata([{'file': image_path, 'title': bird_name}])
+        success = stats.get('success', 0) == 1 and stats.get('failed', 0) == 0
 
         return jsonify({
             'success': success,
@@ -504,12 +605,14 @@ def write_exif_caption():
         if not image_path or not caption:
             return jsonify({'success': False, 'error': t("server.missing_required_params")}), 400
 
-        if not os.path.exists(image_path):
-            return jsonify({'success': False, 'error': t("server.file_not_found", path=image_path)}), 404
+        image_path, path_error, status_code = validate_local_image_path(image_path)
+        if path_error:
+            return jsonify({'success': False, 'error': path_error}), status_code
 
         from tools.exiftool_manager import get_exiftool_manager
         exiftool_mgr = get_exiftool_manager()
-        success = exiftool_mgr.set_metadata(image_path, {'Caption-Abstract': caption})
+        stats = exiftool_mgr.batch_set_metadata([{'file': image_path, 'caption': caption}])
+        success = stats.get('success', 0) == 1 and stats.get('failed', 0) == 0
 
         return jsonify({
             'success': success,

@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import shutil
-from typing import Optional, List, Dict
+from typing import Any, BinaryIO, Dict, List, Optional
 from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import RATING_FOLDER_NAMES
@@ -19,6 +19,8 @@ import threading
 import queue
 
 import atexit
+
+MetadataDict = Dict[str, Any]
 
 class ExifToolManager:
     """ExifTool管理器 - 使用本地打包的exiftool"""
@@ -37,9 +39,9 @@ class ExifToolManager:
         print(f"✅ ExifTool loaded: {self.exiftool_path}")
         
         # V4.0.5: 常驻进程对象
-        self._process = None
-        self._stdout_queue = None
-        self._reader_thread = None
+        self._process: Optional[subprocess.Popen[bytes]] = None
+        self._stdout_queue: Optional[queue.Queue[bytes]] = None
+        self._reader_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._shutdown_lock = threading.Lock()
         self._is_shutdown = False
@@ -53,9 +55,9 @@ class ExifToolManager:
         is_windows = sys.platform.startswith('win')
         exe_name = 'exiftool.exe' if is_windows else 'exiftool'
 
-        if hasattr(sys, '_MEIPASS'):
+        base_path = getattr(sys, '_MEIPASS', None)
+        if base_path is not None:
             # PyInstaller打包后的路径
-            base_path = sys._MEIPASS
             print(f"🔍 PyInstaller environment detected")
             print(f"   base_path (sys._MEIPASS): {base_path}")
 
@@ -193,17 +195,17 @@ class ExifToolManager:
             return False
 
     @staticmethod
-    def _read_stdout_to_queue(out_pipe, q):
+    def _read_stdout_to_queue(out_pipe: BinaryIO, q: queue.Queue[bytes]) -> None:
         """后台线程读取 stdout"""
         try:
             for line in iter(out_pipe.readline, b''):
                 q.put(line)
-        except:
+        except Exception:
             pass
         finally:
             try:
                 out_pipe.close()
-            except:
+            except Exception:
                 pass
 
     def _start_process(self):
@@ -234,12 +236,16 @@ class ExifToolManager:
                 cwd=self._exiftool_cwd,
                 creationflags=creationflags
             )
+
+            stdout_pipe = self._process.stdout
+            if stdout_pipe is None:
+                raise RuntimeError("ExifTool stdout pipe unavailable")
             
             # 启动读取线程
             self._stdout_queue = queue.Queue()
             self._reader_thread = threading.Thread(
                 target=self._read_stdout_to_queue,
-                args=(self._process.stdout, self._stdout_queue),
+                args=(stdout_pipe, self._stdout_queue),
                 daemon=True
             )
             self._reader_thread.start()
@@ -254,8 +260,10 @@ class ExifToolManager:
         if self._process:
             pid = self._process.pid
             try:
-                self._process.stdin.write(b'-stay_open\nFalse\n')
-                self._process.stdin.flush()
+                stdin_pipe = self._process.stdin
+                if stdin_pipe is not None:
+                    stdin_pipe.write(b'-stay_open\nFalse\n')
+                    stdin_pipe.flush()
                 self._process.wait(timeout=2)
                 print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ ExifTool process (PID: {pid}) stopped gracefully")
             except Exception as e:
@@ -294,7 +302,8 @@ class ExifToolManager:
 
     def _read_until_ready(self, timeout=10.0) -> bytes:
         """从队列读取直到 {ready}，支持超时"""
-        if not self._stdout_queue:
+        stdout_queue = self._stdout_queue
+        if stdout_queue is None:
             return b""
             
         output = b""
@@ -309,7 +318,7 @@ class ExifToolManager:
                 raise TimeoutError(f"ExifTool timeout ({timeout}s)")
             
             try:
-                line = self._stdout_queue.get(timeout=remaining)
+                line = stdout_queue.get(timeout=remaining)
                 output += line
                 if b'{ready}' in line:
                     return output
@@ -325,9 +334,12 @@ class ExifToolManager:
 
             try:
                 cmd_str = '\n'.join(args) + '\n-execute\n'
-                
-                self._process.stdin.write(cmd_str.encode('utf-8'))
-                self._process.stdin.flush()
+                stdin_pipe = self._process.stdin
+                if stdin_pipe is None:
+                    raise RuntimeError("ExifTool stdin pipe unavailable")
+
+                stdin_pipe.write(cmd_str.encode('utf-8'))
+                stdin_pipe.flush()
                 
                 # 读取输出
                 output_bytes = self._read_until_ready(timeout)
@@ -373,7 +385,7 @@ class ExifToolManager:
             mode = "embedded"
         return mode
 
-    def _read_arw_structure(self, file_path: str) -> Optional[Dict[str, any]]:
+    def _read_arw_structure(self, file_path: str) -> Optional[MetadataDict]:
         """读取 ARW 关键结构标签，用于检测文件布局变化"""
         tags = [
             'PreviewImageStart',
@@ -423,7 +435,7 @@ class ExifToolManager:
         """判断是否为 ARW 文件"""
         return Path(file_path).suffix.lower() == '.arw'
 
-    def _write_metadata_subprocess(self, item: Dict[str, any], in_place: bool = False) -> bool:
+    def _write_metadata_subprocess(self, item: MetadataDict, in_place: bool = False) -> bool:
         """使用一次性 subprocess 写入"""
         file_path = item.get('file')
         if not file_path or not os.path.exists(file_path):
@@ -499,7 +511,7 @@ class ExifToolManager:
                 except Exception as e:
                     print(f"⚠️ Temp file cleanup failed: {temp_path} - {e}")
 
-    def _write_metadata_xmp_sidecar(self, item: Dict[str, any]) -> bool:
+    def _write_metadata_xmp_sidecar(self, item: MetadataDict) -> bool:
         """写入 XMP 侧车文件（不修改 RAW 本体）"""
         file_path = item.get('file')
         if not file_path:
@@ -607,7 +619,7 @@ class ExifToolManager:
             print(f"❌ XMP sidecar reset error: {e}")
             return False
 
-    def _write_metadata_arw(self, item: Dict[str, any]) -> bool:
+    def _write_metadata_arw(self, item: MetadataDict) -> bool:
         """ARW 写入策略（embedded / inplace / sidecar / auto）；ARW 格式强制走 sidecar（XMP）"""
         file_path = item.get('file')
         mode = self._get_arw_write_mode(file_path)
@@ -655,8 +667,8 @@ class ExifToolManager:
         file_path: str,
         rating: int,
         pick: int = 0,
-        sharpness: float = None,
-        nima_score: float = None
+        sharpness: Optional[float] = None,
+        nima_score: Optional[float] = None
     ) -> bool:
         """
         设置照片评分和旗标 (Lightroom标准)
@@ -729,7 +741,7 @@ class ExifToolManager:
 
     def batch_set_metadata(
         self,
-        files_metadata: List[Dict[str, any]]
+        files_metadata: List[MetadataDict]
     ) -> Dict[str, int]:
         """
         批量设置元数据（使用-execute分隔符，支持不同文件不同参数）
@@ -893,8 +905,12 @@ class ExifToolManager:
                 cmd_str = '\n'.join(args_list) + '\n' # 注意这里不加 -execute，因为 args_list 里已经包含了 N 个 -execute
                 
                 # 写入大量数据
-                self._process.stdin.write(cmd_str.encode('utf-8'))
-                self._process.stdin.flush()
+                stdin_pipe = self._process.stdin
+                if stdin_pipe is None:
+                    raise RuntimeError("ExifTool stdin pipe unavailable")
+
+                stdin_pipe.write(cmd_str.encode('utf-8'))
+                stdin_pipe.flush()
                 
                 # 读取输出：我们需要读取 N 次 {ready}
                 num_executes = args_list.count('-execute')
@@ -959,7 +975,7 @@ class ExifToolManager:
                 else:
                     print(f"⚠️ Original file missing, keeping temp file: {tmp_path}")
     
-    def _create_xmp_sidecars_for_raf(self, files_metadata: List[Dict[str, any]]):
+    def _create_xmp_sidecars_for_raf(self, files_metadata: List[MetadataDict]):
         """
         V3.9.2: 为 RAF/ORF 等需要侧车文件的格式创建 XMP 文件
         
@@ -996,7 +1012,7 @@ class ExifToolManager:
             except Exception:
                 pass  # 侧车文件创建失败不影响主流程
 
-    def read_metadata(self, file_path: str) -> Optional[Dict]:
+    def read_metadata(self, file_path: str) -> Optional[MetadataDict]:
         """
         读取文件的元数据
 
@@ -1250,10 +1266,11 @@ class ExifToolManager:
                     if decoded_stderr is None and stderr_bytes:
                         decoded_stderr = stderr_bytes.decode('latin-1')
                     
+                    error_text = decoded_stderr.strip() if decoded_stderr else ""
                     if i18n:
-                        log(f"  ❌ {i18n.t('logs.batch_failed', start=batch_start+1, end=batch_end, error=decoded_stderr.strip())}")
+                        log(f"  ❌ {i18n.t('logs.batch_failed', start=batch_start+1, end=batch_end, error=error_text)}")
                     else:
-                        log(f"  ❌ 批次 {batch_start+1}-{batch_end} 失败: {decoded_stderr.strip()}")
+                        log(f"  ❌ 批次 {batch_start+1}-{batch_end} 失败: {error_text}")
 
             except subprocess.TimeoutExpired:
                 stats['failed'] += len(valid_files)
@@ -1482,9 +1499,15 @@ def get_exiftool_manager() -> ExifToolManager:
     return exiftool_manager
 
 
+def get_exiftool_runtime() -> tuple[str, str]:
+    """获取 ExifTool 可执行文件路径及建议工作目录。"""
+    manager = get_exiftool_manager()
+    return manager.exiftool_path, manager._exiftool_cwd
+
+
 # 便捷函数
-def set_photo_metadata(file_path: str, rating: int, pick: int = 0, sharpness: float = None,
-                      nima_score: float = None) -> bool:
+def set_photo_metadata(file_path: str, rating: int, pick: int = 0, sharpness: Optional[float] = None,
+                      nima_score: Optional[float] = None) -> bool:
     """设置照片元数据的便捷函数 (V3.2: 移除brisque_score)"""
     manager = get_exiftool_manager()
     return manager.set_rating_and_pick(file_path, rating, pick, sharpness, nima_score)
