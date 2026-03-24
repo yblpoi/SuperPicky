@@ -1083,7 +1083,11 @@ class PhotoProcessor:
         inference_pool = ThreadPoolExecutor(max_workers=2)
         
         # BirdID 异步队列：将识别耗时与主处理流程重叠
-        birdid_executor = ThreadPoolExecutor(max_workers=1) if self.settings.auto_identify else None
+        # CPU 推理可多线程并行；MPS/CUDA 设备并发线程安全性有限，保持单线程
+        from config import get_best_device
+        _birdid_device = str(get_best_device())
+        _birdid_workers = 4 if _birdid_device == 'cpu' else 1
+        birdid_executor = ThreadPoolExecutor(max_workers=_birdid_workers) if self.settings.auto_identify else None
         birdid_tasks = deque()
         identify_bird_fn = None
         if self.settings.auto_identify:
