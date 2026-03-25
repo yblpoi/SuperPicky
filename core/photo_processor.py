@@ -1249,7 +1249,8 @@ class PhotoProcessor:
         if env_yolo_prefetch_raw:
             yolo_prefetch_enabled = env_yolo_prefetch_raw not in {"0", "false", "no", "off"}
         else:
-            yolo_prefetch_enabled = not mps_available
+            # yolo_infer_lock 已串行化所有 YOLO 推理调用，MPS 不存在并发访问风险
+            yolo_prefetch_enabled = True
         
         yolo_prefetch_depth = 3
         env_yolo_prefetch_depth = os.getenv("SUPERPICKY_YOLO_PREFETCH_DEPTH", "").strip()
