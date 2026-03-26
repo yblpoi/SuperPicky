@@ -1,4 +1,4 @@
-name: Build and Release SuperPicky macOS ARM
+name: Build and Release SuperPicky macOS
 
 on:
   push:
@@ -12,7 +12,15 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14
+            arch_tag: arm64
+          - runner: macos-13
+            arch_tag: Intel
+
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
 
@@ -143,7 +151,7 @@ jobs:
           DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
         run: |
           VERSION=$(python -c "from constants import APP_VERSION; print(APP_VERSION)")
-          DMG_NAME="SuperPicky_v${VERSION}_arm64_${COMMIT_HASH}.dmg"
+          DMG_NAME="SuperPicky_v${VERSION}_${{ matrix.arch_tag }}_${COMMIT_HASH}.dmg"
           DMG_TEMP="dist/dmg_temp"
 
           rm -rf "$DMG_TEMP"
@@ -201,4 +209,5 @@ jobs:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           name: ${{ steps.release_meta.outputs.name }}
           body_path: ChangeLog.md
+          prerelease: true
           files: ${{ env.DMG_PATH }}
