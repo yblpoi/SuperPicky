@@ -205,10 +205,6 @@ class WorkerThread(threading.Thread):
                 birdid_settings_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'SuperPicky_Data')
             birdid_settings_path = os.path.join(birdid_settings_dir, 'birdid_dock_settings.json')
 
-            _dbg_msg = f"[DEBUG] Checking settings file: {birdid_settings_path}, exists: {os.path.exists(birdid_settings_path)}"
-            print(_dbg_msg)
-            _log_to_file(_dbg_msg, self.dir_path, file_only=True)
-            
             if os.path.exists(birdid_settings_path):
                 with open(birdid_settings_path, 'r', encoding='utf-8') as f:
                     birdid_settings = json.load(f)
@@ -250,17 +246,7 @@ class WorkerThread(threading.Thread):
                             match = re.search(r'\(([A-Z]{2}-[A-Z0-9]+)\)', selected_region)
                             if match:
                                 birdid_region_code = match.group(1)
-            _dbg_msg2 = (
-                f"[DEBUG] BirdID settings: auto_identify={birdid_auto_identify}, "
-                f"country={birdid_country_code}, region={birdid_region_code}, "
-                f"confidence={birdid_confidence_threshold}%"
-            )
-            print(_dbg_msg2)
-            _log_to_file(_dbg_msg2, self.dir_path, file_only=True)
         except Exception as e:
-            _dbg_err = f"[DEBUG] BirdID settings load failed: {e}"
-            print(_dbg_err)
-            _log_to_file(_dbg_err, self.dir_path, file_only=True)
             # BirdID 设置读取失败不影响主流程
             # 使用默认值
             birdid_use_ebird = True
@@ -2699,18 +2685,14 @@ class SuperPickyMainWindow(QMainWindow):
                 has_update, update_info = checker.check_for_updates(
                     include_prerelease=_cfg.include_prerelease
                 )
-                print(f"[DEBUG] Update check done: has_update={has_update}, silent={silent}")
-                
                 # 静默模式下，只有有更新时才弹窗
                 if silent and not has_update:
-                    print("[DEBUG] Silent mode, no update, skipping dialog")
                     return
 
                 # 静默模式：跳过用户已选择忽略的版本
                 if silent and has_update and update_info:
                     latest = update_info.get('version', '')
                     if latest and latest == _cfg.ignored_update_version:
-                        print(f"[DEBUG] Silent mode, version {latest} is ignored, skipping dialog")
                         return
 
                 # 使用信号发送到主线程

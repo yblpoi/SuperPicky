@@ -3,11 +3,14 @@
 """
 SuperPicky - 系统信息收集与启动日志
 在 App 启动时记录一次系统环境，写入 SuperPicky 配置目录的 startup.log
+同时设置错误日志，捕获未处理异常并写入 superpicky_errors.log
 """
 
 import platform
 import sys
 import os
+import logging
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -187,3 +190,79 @@ def write_startup_log() -> str:
     except Exception as e:
         print(f"[system_logger] Failed to write startup log: {e}")
         return None
+
+
+def _write_error_to_log(message: str):
+    """
+    将错误信息写入 superpicky.log（优先写当前活跃工作目录，fallback 到 config dir）。
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    entry = f"[{timestamp}] [ERROR] {message}\n"
+
+    # 优先写入当前活跃工作目录的 superpicky.log
+    written = False
+    try:
+        from tools.utils import get_active_log_directory
+        active_dir = get_active_log_directory()
+        if active_dir and os.path.isdir(active_dir):
+            log_path = os.path.join(active_dir, "superpicky.log")
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(entry)
+            written = True
+    except Exception:
+        pass
+
+    # Fallback：写入 config dir 的 superpicky_errors.log
+    if not written:
+        try:
+            config_dir = _get_config_dir()
+            config_dir.mkdir(parents=True, exist_ok=True)
+            fallback_path = config_dir / "superpicky_errors.log"
+            with open(str(fallback_path), 'a', encoding='utf-8') as f:
+                f.write(entry)
+        except Exception:
+            pass
+
+
+def setup_error_logging():
+    """
+    设置错误日志系统：
+    - 捕获所有未处理的 Python 异常（sys.excepthook）写入 superpicky.log
+    - 捕获子线程未处理异常（threading.excepthook）
+    - 每条错误前附带完整 traceback
+    """
+    try:
+        # ── 捕获主线程未处理异常 ─────────────────────────────
+        _original_excepthook = sys.excepthook
+
+        def _excepthook(exc_type, exc_value, exc_tb):
+            if issubclass(exc_type, KeyboardInterrupt):
+                _original_excepthook(exc_type, exc_value, exc_tb)
+                return
+            tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            _write_error_to_log(f"Unhandled exception:\n{tb_text}")
+            _original_excepthook(exc_type, exc_value, exc_tb)
+
+        sys.excepthook = _excepthook
+
+        # ── 捕获子线程未处理异常（Python 3.8+）──────────────
+        import threading
+        _original_thread_excepthook = threading.excepthook
+
+        def _thread_excepthook(args):
+            if args.exc_type is None or issubclass(args.exc_type, KeyboardInterrupt):
+                _original_thread_excepthook(args)
+                return
+            tb_text = "".join(traceback.format_exception(
+                args.exc_type, args.exc_value, args.exc_traceback
+            ))
+            thread_name = getattr(args.thread, 'name', 'unknown-thread')
+            _write_error_to_log(
+                f"Unhandled exception in thread [{thread_name}]:\n{tb_text}"
+            )
+            _original_thread_excepthook(args)
+
+        threading.excepthook = _thread_excepthook
+
+    except Exception as e:
+        print(f"[system_logger] Failed to setup error logging: {e}")

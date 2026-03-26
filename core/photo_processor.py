@@ -135,22 +135,6 @@ class PhotoProcessor:
         # 获取国际化实例
         self.i18n = get_i18n()
         
-        # DEBUG: 输出参数
-        on_off = lambda b: self.i18n.t("labels.yes") if b else self.i18n.t("labels.no")
-        self._log(f"\n🔍 DEBUG - {self.i18n.t('labels.processing')}:")
-        self._log(f"  📊 {self.i18n.t('labels.ai_confidence')}: {settings.ai_confidence}")
-        self._log(f"  📏 {self.i18n.t('labels.sharpness_short')}: {settings.sharpness_threshold}")
-        self._log(f"  🎨 {self.i18n.t('labels.aesthetics')}: {settings.nima_threshold}")
-        self._log(f"  🔧 {self.i18n.t('labels.normalization')}: {settings.normalization_mode}")
-        self._log(f"  🦅 {self.i18n.t('labels.flight_detection')}: {on_off(settings.detect_flight)}")
-        self._log(f"  📸 {self.i18n.t('labels.exposure_detection')}: {on_off(settings.detect_exposure)}")
-        self._log(f"  🐦 BirdID: {on_off(settings.auto_identify)}")
-        if settings.auto_identify:
-            country = settings.birdid_country_code or "Auto(GPS)"
-            region = settings.birdid_region_code or "All"
-            self._log(f"     └─ Country: {country}, Region: {region}")
-        self._log(f"  ⚙️  Min Sharpness: {self.config.min_sharpness}")
-        self._log(f"  ⚙️  Min Aesthetics: {self.config.min_nima}\n")
         
         # 统计数据（支持 0/1/2/3 星）
         self.stats = {
@@ -936,8 +920,6 @@ class PhotoProcessor:
                     files_tbr.append(jpeg_filename)
                     self.temp_converted_jpegs.add(jpeg_filename)  # 标记为临时文件
                     converted_count += 1
-                    if converted_count % 5 == 0 or converted_count == len(raw_files_to_convert):
-                        self._log(self.i18n.t("logs.raw_converted", current=converted_count, total=len(raw_files_to_convert)))
                 else:
                     self._log(f"  ❌ {self.i18n.t('logs.batch_failed', start=key, end=key, error=result)}", "error")
         
@@ -2636,8 +2618,7 @@ class PhotoProcessor:
             
             # Debug: show picked file paths
             for file_path in picked_files:
-                exists = os.path.exists(file_path)
-                self._log(f"    🔍 Picked: {os.path.basename(file_path)} (exists: {exists})")
+                pass  # picked file confirmed
             
             # 批量写入
             picked_batch = [{
@@ -2745,11 +2726,6 @@ class PhotoProcessor:
             folder_path = os.path.join(self.dir_path, folder_name)
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
-                # V4.0: Show clearer folder creation log
-                if os.path.sep in folder_name or '/' in folder_name:
-                    self._log(f"  📁 Created folder: {folder_name}/")
-                else:
-                    self._log(f"  📁 Created folder: {folder_name}/")
         
         # 移动文件
         moved_count = 0
@@ -2809,7 +2785,6 @@ class PhotoProcessor:
             with open(manifest_path, 'w', encoding='utf-8') as f:
                 json.dump(manifest, f, ensure_ascii=False, indent=2)
             self._log(f"  ✅ Moved {moved_count} photos")
-            self._log(f"  📋 Manifest: .superpicky_manifest.json")
         except Exception as e:
             self._log(f"  ⚠️  Manifest save failed: {e}", "warning")
     
