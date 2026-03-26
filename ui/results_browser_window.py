@@ -296,7 +296,10 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
 
 def _move_to_trash(filepath: str) -> bool:
     """将文件移入系统回收站（跨平台）。返回是否成功。"""
-    if not filepath or not os.path.exists(filepath):
+    if not filepath:
+        return False
+    filepath = os.path.normpath(filepath)  # 消除 ./ 等冗余路径符，防止 Finder 误删父目录
+    if not os.path.isfile(filepath):       # 只允许删除文件，禁止误删目录
         return False
     try:
         if sys.platform == "darwin":
@@ -753,6 +756,11 @@ class ResultsBrowserWindow(QMainWindow):
             self._update_status(0, 0)
             return
 
+        # 动态刷新鸟种下拉：只显示当前星级筛选下有照片的鸟种
+        use_en = self.i18n.current_lang.startswith('en')
+        species = self._db.get_distinct_species(use_en=use_en, ratings=filters.get('ratings'))
+        self._filter_panel.update_species_list(species)
+
         raw_photos = self._db.get_photos_by_filters(filters)
         resolved_photos = [self._resolve_photo_paths(p) for p in raw_photos]
         self._raw_filtered_photos = resolved_photos
@@ -761,7 +769,7 @@ class ResultsBrowserWindow(QMainWindow):
         filtered = len(resolved_photos)
         self._update_status(total, filtered)
         self._filter_panel.update_count(filtered)
-        
+
         self._update_display_list()
 
     def _update_display_list(self):
@@ -1160,6 +1168,12 @@ class ResultsBrowserWindow(QMainWindow):
 
         # 4. 从内存列表移除
         target_identity = _photo_identity(photo)
+        # 记录被删除照片在过滤列表中的位置，用于删除后正确跳转
+        _del_identities = [_photo_identity(p) for p in self._filtered_photos]
+        try:
+            _deleted_idx = _del_identities.index(_photo_identity(photo))
+        except ValueError:
+            _deleted_idx = 0
         self._filtered_photos = [p for p in self._filtered_photos if _photo_identity(p) != target_identity]
         self._all_photos = [p for p in self._all_photos if _photo_identity(p) != target_identity]
 
@@ -1167,16 +1181,13 @@ class ResultsBrowserWindow(QMainWindow):
         self._thumb_grid.remove_photo(photo)
         self._fullscreen.set_photo_list(self._filtered_photos)
 
-        # 6. 跳转逻辑
+        # 6. 跳转逻辑：跳到被删除位置的下一张，已是末尾则跳上一张
         if self._filtered_photos:
-            nxt = self._thumb_grid.select_next()
-            if nxt is None:
-                nxt = self._thumb_grid.select_prev()
-            if nxt:
-                self._fullscreen.show_photo(nxt)
-                self._detail_panel.show_photo(nxt)
-            else:
-                self._exit_fullscreen()
+            next_idx = min(_deleted_idx, len(self._filtered_photos) - 1)
+            nxt = self._filtered_photos[next_idx]
+            self._thumb_grid.select_photo(nxt)
+            self._fullscreen.show_photo(nxt)
+            self._detail_panel.show_photo(nxt)
         else:
             self._exit_fullscreen()
 
@@ -1695,6 +1706,11 @@ class ResultsBrowserWidget(QWidget):
             self._update_status(0, 0)
             return
 
+        # 动态刷新鸟种下拉：只显示当前星级筛选下有照片的鸟种
+        use_en = self.i18n.current_lang.startswith('en')
+        species = self._db.get_distinct_species(use_en=use_en, ratings=filters.get('ratings'))
+        self._filter_panel.update_species_list(species)
+
         raw_photos = self._db.get_photos_by_filters(filters)
         self._raw_filtered_photos = [self._resolve_photo_paths(p) for p in raw_photos]
         total = len(self._all_photos)
@@ -1942,6 +1958,12 @@ class ResultsBrowserWidget(QWidget):
 
         # 4. 从内存列表移除
         target_identity = _photo_identity(photo)
+        # 记录被删除照片在过滤列表中的位置，用于删除后正确跳转
+        _del_identities = [_photo_identity(p) for p in self._filtered_photos]
+        try:
+            _deleted_idx = _del_identities.index(_photo_identity(photo))
+        except ValueError:
+            _deleted_idx = 0
         self._filtered_photos = [p for p in self._filtered_photos if _photo_identity(p) != target_identity]
         self._all_photos = [p for p in self._all_photos if _photo_identity(p) != target_identity]
 
@@ -1949,16 +1971,13 @@ class ResultsBrowserWidget(QWidget):
         self._thumb_grid.remove_photo(photo)
         self._fullscreen.set_photo_list(self._filtered_photos)
 
-        # 6. 跳转逻辑
+        # 6. 跳转逻辑：跳到被删除位置的下一张，已是末尾则跳上一张
         if self._filtered_photos:
-            nxt = self._thumb_grid.select_next()
-            if nxt is None:
-                nxt = self._thumb_grid.select_prev()
-            if nxt:
-                self._fullscreen.show_photo(nxt)
-                self._detail_panel.show_photo(nxt)
-            else:
-                self._exit_fullscreen()
+            next_idx = min(_deleted_idx, len(self._filtered_photos) - 1)
+            nxt = self._filtered_photos[next_idx]
+            self._thumb_grid.select_photo(nxt)
+            self._fullscreen.show_photo(nxt)
+            self._detail_panel.show_photo(nxt)
         else:
             self._exit_fullscreen()
 

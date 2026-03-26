@@ -458,12 +458,13 @@ class ReportDB:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_distinct_species(self, use_en: bool = False) -> List[str]:
+    def get_distinct_species(self, use_en: bool = False, ratings: list = None) -> List[str]:
         """
         获取数据库中去重后的鸟种名称列表（用于结果浏览器筛选下拉框）。
 
         Args:
             use_en: True 使用英文鸟种列，False 使用中文鸟种列
+            ratings: 若提供，只返回在这些星级下有照片的鸟种
 
         Returns:
             鸟种名称列表（已去重、去空值）
@@ -472,15 +473,25 @@ class ReportDB:
         assert column in {"bird_species_en", "bird_species_cn"}, f"Invalid column: {column}"
         order_clause = f"{column} COLLATE NOCASE" if use_en else column
 
+        where_clauses = [
+            f"{column} IS NOT NULL",
+            f"TRIM({column}) != ''",
+            "rating != -1",
+        ]
+        params: List[Any] = []
+
+        if isinstance(ratings, list):
+            valid = [r for r in ratings if r != -1]
+            if valid:
+                placeholders = ", ".join(["?"] * len(valid))
+                where_clauses.append(f"rating IN ({placeholders})")
+                params.extend(valid)
+
+        where_sql = " AND ".join(where_clauses)
         with self._lock:
             cursor = self._conn.execute(
-                f"""
-                SELECT DISTINCT {column}
-                FROM photos
-                WHERE {column} IS NOT NULL
-                  AND TRIM({column}) != ''
-                ORDER BY {order_clause}
-                """
+                f"SELECT DISTINCT {column} FROM photos WHERE {where_sql} ORDER BY {order_clause}",
+                params
             )
             return [row[0] for row in cursor.fetchall()]
 
@@ -501,13 +512,14 @@ class ReportDB:
         where_clauses = []
         params: List[Any] = []
 
-        # 永远排除无鸟记录（rating=-1），即使前端意外传入也过滤掉
-        where_clauses.append("rating != -1")
-
         ratings = filters.get("ratings")
+        requesting_nobird = isinstance(ratings, list) and -1 in ratings
+
+        # 只有未明确请求无鸟照片时才排除 rating=-1
+        if not requesting_nobird:
+            where_clauses.append("rating != -1")
+
         if isinstance(ratings, list):
-            # 过滤掉 -1（以防万一）
-            ratings = [r for r in ratings if r != -1]
             if not ratings:
                 return []
             placeholders = ", ".join(["?"] * len(ratings))
@@ -580,9 +592,9 @@ class ReportDB:
             if picked_only and results:
                 # 按 topiq+sharpness 选出 top 25%（选片逻辑不变）
                 results.sort(key=lambda x: (
-                    x.get("adj_topiq", x.get("nima_score", -1e99)),
-                    x.get("adj_sharpness", x.get("head_sharp", -1e99)),
-                    x.get("filename", "")
+                    x.get("adj_topiq") or x.get("nima_score") or -1e99,
+                    x.get("adj_sharpness") or x.get("head_sharp") or -1e99,
+                    x.get("filename") or ""
                 ), reverse=True)
                 num_to_keep = max(1, int(len(results) * 0.25))
                 results = results[:num_to_keep]

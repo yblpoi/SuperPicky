@@ -344,19 +344,30 @@ class MergedReportDB:
         
         return results
     
-    def get_distinct_species(self, use_en: bool = False) -> List[str]:
-        """获取所有目录的去重鸟种列表"""
+    def get_distinct_species(self, use_en: bool = False, ratings: list = None) -> List[str]:
+        """获取所有目录的去重鸟种列表，ratings 非空时只返回在这些星级下有照片的鸟种"""
         col = "bird_species_en" if use_en else "bird_species_cn"
-        
+
         if not self._db_aliases:
             return []
-        
+
+        # 构建星级过滤子句（ratings 是整数列表，直接内联安全）
+        rating_clause = ""
+        if isinstance(ratings, list):
+            valid = [r for r in ratings if r != -1]
+            if valid:
+                rating_in = ", ".join(str(r) for r in valid)
+                rating_clause = f" AND rating IN ({rating_in})"
+
         parts = []
         for alias in self._db_aliases:
-            parts.append(f"SELECT DISTINCT {col} FROM {alias}.photos WHERE {col} IS NOT NULL AND {col} != ''")
-        
+            parts.append(
+                f"SELECT DISTINCT {col} FROM {alias}.photos "
+                f"WHERE {col} IS NOT NULL AND {col} != '' AND rating != -1{rating_clause}"
+            )
+
         sql = f"SELECT DISTINCT {col} FROM ({' UNION '.join(parts)}) ORDER BY {col}"
-        
+
         with self._lock:
             cursor = self._conn.execute(sql)
             return [row[0] for row in cursor.fetchall()]

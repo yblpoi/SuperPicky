@@ -21,6 +21,7 @@ CURRENT_VERSION = APP_VERSION
 # GitHub API 配置
 GITHUB_REPO = "jamesphotography/SuperPicky"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_RELEASES_LIST_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
 # 平台+架构对应的 Asset 文件名模式
@@ -46,7 +47,7 @@ class UpdateChecker:
         self.current_version = current_version
         self._latest_info: Optional[Dict] = None
     
-    def check_for_updates(self, timeout: int = 10) -> Tuple[bool, Optional[Dict]]:
+    def check_for_updates(self, timeout: int = 10, include_prerelease: bool = False) -> Tuple[bool, Optional[Dict]]:
         """
         检查是否有更新
         
@@ -71,17 +72,26 @@ class UpdateChecker:
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
             
-            # 请求 GitHub API
+            # 选择 API 端点
+            api_url = GITHUB_RELEASES_LIST_URL if include_prerelease else GITHUB_API_URL
+
             req = urllib.request.Request(
-                GITHUB_API_URL,
+                api_url,
                 headers={
                     'Accept': 'application/vnd.github.v3+json',
                     'User-Agent': f'SuperPicky/{self.current_version}'
                 }
             )
-            
+
             with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as response:
-                data = json.loads(response.read().decode('utf-8'))
+                raw = json.loads(response.read().decode('utf-8'))
+
+            # /releases 返回列表，/releases/latest 返回单个对象
+            if include_prerelease:
+                # 取发布时间最新的一条（列表已按 published_at 倒序）
+                data = raw[0] if raw else {}
+            else:
+                data = raw
             
             self._latest_info = data
             

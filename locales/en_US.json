@@ -418,9 +418,24 @@
     "yolo_loaded": "✅ YOLO detection model loaded",
     "keypoint_loaded": "✅ Keypoint model loaded",
     "flight_loaded": "✅ Flight detection model loaded",
+    "iqa_loaded": "✅ Aesthetic scoring model loaded",
     "birdid_loaded": "✅ Bird ID model loaded",
-    "preload_complete": "🎉 All models preloaded!\n",
+    "preload_complete": "🎉 All models preloaded!",
+    "preload_complete_with_errors": "⚠️ Preload done, some models failed: {failed}",
     "preload_failed": "⚠️ Model preload failed: {error}"
+  },
+  "health": {
+    "disk_status": "📁 Disk: {free} GB free / {total} GB total {space_icon}  Write: {write_icon} {write_label}",
+    "writable": "OK",
+    "not_writable": "No write permission",
+    "disk_check_failed": "⚠️ Disk check failed: {error}",
+    "ram_ok": "💾 Available RAM: {free} GB ✅",
+    "ram_low": "⚠️ Low RAM: {free} GB — model loading may be slow",
+    "exiftool_error_title": "ExifTool Unavailable",
+    "exiftool_error_msg": "ExifTool could not be started. Star ratings will not be written to EXIF metadata.\n\nError: {error}\n\nPlease reinstall the app or check for file corruption.",
+    "no_photos_title": "No Photos Found",
+    "no_photos_msg": "No supported photo files (JPG / RAW / HEIF) found in:\n{directory}",
+    "models_still_loading": "⚠️ Models are still loading in background — first photo may process slowly"
   },
   "stats": {
     "total": "Total",
@@ -797,7 +812,8 @@
     "download_hint": "To download, visit the official website:",
     "mac_version": "⌘ Mac",
     "windows_version": "⊞ Windows",
-    "close": "Close"
+    "close": "Close",
+    "include_prerelease": "Notify me about pre-release versions (Beta / RC)"
   },
   "about": {
     "window_title": "About James",

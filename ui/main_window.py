@@ -205,10 +205,6 @@ class WorkerThread(threading.Thread):
                 birdid_settings_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'SuperPicky_Data')
             birdid_settings_path = os.path.join(birdid_settings_dir, 'birdid_dock_settings.json')
 
-            _dbg_msg = f"[DEBUG] Checking settings file: {birdid_settings_path}, exists: {os.path.exists(birdid_settings_path)}"
-            print(_dbg_msg)
-            _log_to_file(_dbg_msg, self.dir_path, file_only=True)
-            
             if os.path.exists(birdid_settings_path):
                 with open(birdid_settings_path, 'r', encoding='utf-8') as f:
                     birdid_settings = json.load(f)
@@ -250,17 +246,7 @@ class WorkerThread(threading.Thread):
                             match = re.search(r'\(([A-Z]{2}-[A-Z0-9]+)\)', selected_region)
                             if match:
                                 birdid_region_code = match.group(1)
-            _dbg_msg2 = (
-                f"[DEBUG] BirdID settings: auto_identify={birdid_auto_identify}, "
-                f"country={birdid_country_code}, region={birdid_region_code}, "
-                f"confidence={birdid_confidence_threshold}%"
-            )
-            print(_dbg_msg2)
-            _log_to_file(_dbg_msg2, self.dir_path, file_only=True)
         except Exception as e:
-            _dbg_err = f"[DEBUG] BirdID settings load failed: {e}"
-            print(_dbg_err)
-            _log_to_file(_dbg_err, self.dir_path, file_only=True)
             # BirdID 设置读取失败不影响主流程
             # 使用默认值
             birdid_use_ebird = True
@@ -320,8 +306,35 @@ class WorkerThread(threading.Thread):
                 f"  Metadata Mode      : {_adv.get_metadata_write_mode()}",
                 f"  Skill Level        : {_adv.skill_level}",
                 f"  Language           : {_adv.language or 'Auto'}",
-                "=" * 60,
             ])
+            try:
+                from tools.system_logger import collect_system_info as _collect_sys
+                _si = _collect_sys()
+                _sys_lines = [
+                    "[System]",
+                    f"  App Version        : {_si.get('app_version', '?')}",
+                    f"  Launch Mode        : {_si.get('launch_mode', '?')}",
+                    f"  OS                 : {_si.get('os', '?')} {_si.get('os_release', '')}",
+                ]
+                if 'macos_version' in _si:
+                    _sys_lines.append(f"  macOS              : {_si['macos_version']}")
+                _sys_lines += [
+                    f"  Machine            : {_si.get('machine', '?')}",
+                    f"  Python             : {_si.get('python_version', '?')}",
+                    f"  RAM Total          : {_si.get('ram_total_gb', '?')} GB",
+                    f"  RAM Free           : {_si.get('ram_available_gb', '?')} GB",
+                    f"  AI Device          : {_si.get('ai_device', '?')}",
+                ]
+                if 'gpu_name' in _si:
+                    _sys_lines.append(f"  GPU                : {_si['gpu_name']}")
+                if 'gpu_vram_gb' in _si:
+                    _sys_lines.append(f"  VRAM               : {_si['gpu_vram_gb']} GB")
+                if 'cuda_version' in _si:
+                    _sys_lines.append(f"  CUDA               : {_si['cuda_version']}")
+                _session_header = _session_header + "\n" + "\n".join(_sys_lines)
+            except Exception:
+                pass
+            _session_header = _session_header + "\n" + "=" * 60
         except Exception as _hdr_err:
             # 会话头生成失败时写一个最简版本，不阻断处理流程
             _session_header = "\n".join([
@@ -655,6 +668,7 @@ class SuperPickyMainWindow(QMainWindow):
         
         # osk flex,countly.com 63fda2e
         self._startup_prompts_ran = False
+        self._preload_done = False  # 模型预加载是否完成
         
         # V4.2: 使用默认窗口大小，不最大化
         # self.showMaximized()  # 注释掉这行，使用默认大小
@@ -1503,6 +1517,7 @@ class SuperPickyMainWindow(QMainWindow):
         self.dir_input.setText(directory)
 
         self._log(self.i18n.t("messages.dir_selected", directory=directory))
+        self._check_directory_health(directory)
 
         # 写入最近目录历史并刷新菜单
         self.config.add_recent_directory(directory)
@@ -1513,6 +1528,53 @@ class SuperPickyMainWindow(QMainWindow):
         self._resume_prompt_handled = False
         self._check_report_csv()
         self._maybe_prompt_resume_after_selection()
+
+    def _check_directory_health(self, directory: str):
+        """检查目标目录的磁盘空间和写权限，结果输出到 UI 日志。"""
+        import shutil, os
+        try:
+            usage = shutil.disk_usage(directory)
+            free_gb = usage.free / (1024 ** 3)
+            total_gb = usage.total / (1024 ** 3)
+
+            # 写权限检查（跨平台：os.access + 实际写测试）
+            can_write = os.access(directory, os.W_OK)
+            if can_write:
+                # 部分网络盘 os.access 返回 True 但实际不可写，做一次实写验证
+                try:
+                    test_path = os.path.join(directory, ".superpicky_write_test")
+                    with open(test_path, "w") as _f:
+                        _f.write("")
+                    os.remove(test_path)
+                except Exception:
+                    can_write = False
+
+            write_icon = "✅" if can_write else "❌"
+            write_label = self.i18n.t("health.writable") if can_write else self.i18n.t("health.not_writable")
+
+            if free_gb < 1.0:
+                space_icon = "❌"
+                level = "warning"
+            elif free_gb < 5.0:
+                space_icon = "⚠️"
+                level = "warning"
+            else:
+                space_icon = "✅"
+                level = "info"
+
+            self._log(
+                self.i18n.t(
+                    "health.disk_status",
+                    free=f"{free_gb:.1f}",
+                    total=f"{total_gb:.0f}",
+                    space_icon=space_icon,
+                    write_icon=write_icon,
+                    write_label=write_label,
+                ),
+                level,
+            )
+        except Exception as e:
+            self._log(self.i18n.t("health.disk_check_failed", error=str(e)), "warning")
 
     # ========== 状态条 + 结果浏览器辅助 ==========
 
@@ -1862,6 +1924,43 @@ class SuperPickyMainWindow(QMainWindow):
             self._log(f"⚠️ 恢复状态检查失败: {resume_err}", "warning")
         finally:
             self._resume_prompt_handled = False
+
+        # ── 开始前自检 ──────────────────────────────────────────
+        # 1. ExifTool 健康检查（阻断型）
+        try:
+            from tools.exiftool_manager import get_exiftool_manager
+            get_exiftool_manager()  # 触发 _verify_exiftool()，失败会 raise RuntimeError
+        except Exception as _et_err:
+            StyledMessageBox.warning(
+                self,
+                self.i18n.t("health.exiftool_error_title"),
+                self.i18n.t("health.exiftool_error_msg", error=str(_et_err)),
+            )
+            return
+
+        # 2. 照片数量预扫描（阻断型）
+        try:
+            import os as _os
+            from constants import IMAGE_EXTENSIONS
+            _ext_set = set(e.lower() for e in IMAGE_EXTENSIONS)
+            _photo_count = sum(
+                1 for _e in _os.scandir(self.directory_path)
+                if _e.is_file() and _os.path.splitext(_e.name)[1].lower() in _ext_set
+            )
+            if _photo_count == 0:
+                StyledMessageBox.warning(
+                    self,
+                    self.i18n.t("health.no_photos_title"),
+                    self.i18n.t("health.no_photos_msg", directory=self.directory_path),
+                )
+                return
+        except Exception:
+            pass  # 扫描失败不阻断，交给 worker 处理
+
+        # 3. 模型预加载状态提示（非阻断）
+        if not self._preload_done:
+            self._log(self.i18n.t("health.models_still_loading"), "warning")
+        # ────────────────────────────────────────────────────────
 
         # 清空日志和进度
         self.log_text.clear()
@@ -2640,40 +2739,118 @@ class SuperPickyMainWindow(QMainWindow):
     def _preload_all_models(self):
         """后台预加载所有AI模型（不阻塞UI）"""
         import threading
-        
-        def preload_task():
+
+        def _emit_and_log(msg, level="info"):
+            """同时发送到 UI 和 superpicky.log"""
+            self.log_signal.emit(msg, level)
             try:
-                # 使用信号发送日志，确保线程安全
-                self.log_signal.emit(self.i18n.t("preload.preloading_models"), "info")
-                
-                # 1. YOLO 检测模型 - 使用GUI日志回调
+                from tools.utils import log_message
+                from tools.utils import get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message(msg, d, file_only=True)
+            except Exception:
+                pass
+
+        def preload_task():
+            # RAM 检查（psutil 可选依赖，缺失时跳过）
+            try:
+                import psutil
+                vm = psutil.virtual_memory()
+                free_gb = vm.available / (1024 ** 3)
+                if free_gb < 4.0:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_low", free=f"{free_gb:.1f}"),
+                        "warning",
+                    )
+                else:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_ok", free=f"{free_gb:.1f}"),
+                        "info",
+                    )
+            except ImportError:
+                pass  # psutil 未安装，跳过 RAM 检查
+
+            _emit_and_log(self.i18n.t("preload.preloading_models"), "info")
+            results = []
+
+            # 1. YOLO 检测模型
+            try:
                 from ai_model import load_yolo_model
                 load_yolo_model(log_callback=lambda msg, tag="info": self.log_signal.emit(msg, tag))
                 self.log_signal.emit(self.i18n.t("preload.yolo_loaded"), "success")
-                
-                # 2. 关键点检测模型
+                results.append(("YOLO", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"YOLO: {e}"), "warning")
+                results.append(("YOLO", False, str(e)))
+
+            # 2. 关键点检测模型
+            try:
                 from core.keypoint_detector import get_keypoint_detector
-                kp_detector = get_keypoint_detector()
-                kp_detector.load_model()
+                get_keypoint_detector().load_model()
                 self.log_signal.emit(self.i18n.t("preload.keypoint_loaded"), "success")
-                
-                # 3. 飞版检测模型
+                results.append(("Keypoint", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Keypoint: {e}"), "warning")
+                results.append(("Keypoint", False, str(e)))
+
+            # 3. 飞版检测模型
+            try:
                 from core.flight_detector import get_flight_detector
-                flight_detector = get_flight_detector()
-                flight_detector.load_model()
+                get_flight_detector().load_model()
                 self.log_signal.emit(self.i18n.t("preload.flight_loaded"), "success")
-                
-                # 4. 识鸟模型
+                results.append(("Flight", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Flight: {e}"), "warning")
+                results.append(("Flight", False, str(e)))
+
+            # 4. IQA/TOPIQ 美学评分模型
+            try:
+                from config import get_best_device
+                from iqa_scorer import get_iqa_scorer
+                get_iqa_scorer(device=get_best_device().type)
+                self.log_signal.emit(self.i18n.t("preload.iqa_loaded", fallback="✅ 美学评分模型已加载"), "success")
+                results.append(("IQA", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"IQA: {e}"), "warning")
+                results.append(("IQA", False, str(e)))
+
+            # 5. 识鸟模型
+            try:
                 from birdid.bird_identifier import get_classifier
                 get_classifier()
                 self.log_signal.emit(self.i18n.t("preload.birdid_loaded"), "success")
-                
-                self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
-                
+                results.append(("BirdID", True, None))
             except Exception as e:
-                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=str(e)), "warning")
-        
-        # 在后台线程中执行，不阻塞UI
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"BirdID: {e}"), "warning")
+                results.append(("BirdID", False, str(e)))
+
+            # 汇总：GUI 只显示一行结论，详情写入日志文件
+            ok_names = [name for name, s, _ in results if s]
+            fail_items = [(name, err) for name, s, err in results if not s]
+            summary_lines = ["[Preload Summary]"]
+            for name in ok_names:
+                summary_lines.append(f"  ✅ {name}")
+            for name, err in fail_items:
+                summary_lines.append(f"  ❌ {name}: {err}")
+            try:
+                from tools.utils import log_message, get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message("\n".join(summary_lines), d, file_only=True)
+            except Exception:
+                pass
+
+            if not fail_items:
+                self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
+            else:
+                failed_str = ", ".join(name for name, _ in fail_items)
+                self.log_signal.emit(
+                    self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
+                    "warning"
+                )
+            self._preload_done = True
+
         thread = threading.Thread(target=preload_task, daemon=True)
         thread.start()
 
@@ -2693,15 +2870,22 @@ class SuperPickyMainWindow(QMainWindow):
         def _do_check():
             try:
                 from tools.update_checker import UpdateChecker
-                checker = UpdateChecker()  # 使用 update_checker.CURRENT_VERSION
-                has_update, update_info = checker.check_for_updates()
-                print(f"[DEBUG] Update check done: has_update={has_update}, silent={silent}")
-                
+                from advanced_config import get_advanced_config as _get_cfg
+                _cfg = _get_cfg()
+                checker = UpdateChecker()
+                has_update, update_info = checker.check_for_updates(
+                    include_prerelease=_cfg.include_prerelease
+                )
                 # 静默模式下，只有有更新时才弹窗
                 if silent and not has_update:
-                    print("[DEBUG] Silent mode, no update, skipping dialog")
                     return
-                    
+
+                # 静默模式：跳过用户已选择忽略的版本
+                if silent and has_update and update_info:
+                    latest = update_info.get('version', '')
+                    if latest and latest == _cfg.ignored_update_version:
+                        return
+
                 # 使用信号发送到主线程
                 self._update_signals.update_check_done.emit(has_update, update_info)
             except Exception as e:
@@ -2720,7 +2904,6 @@ class SuperPickyMainWindow(QMainWindow):
     def _show_update_result_dialog(self, has_update: bool, update_info):
         """显示更新检测结果对话框"""
         try:
-            print("[DEBUG] _show_update_result_dialog 开始执行")
             from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
             import webbrowser
             
@@ -2850,11 +3033,53 @@ class SuperPickyMainWindow(QMainWindow):
                 layout.addWidget(btn_frame)
             
             layout.addSpacing(8)
-            
-            # 关闭按钮
+
+            # include_prerelease 勾选框（仅有更新时显示）
+            if has_update:
+                from PySide6.QtWidgets import QCheckBox
+                from advanced_config import get_advanced_config as _get_cfg
+                _cfg = _get_cfg()
+                prerelease_cb = QCheckBox(self.i18n.t("update.include_prerelease"))
+                prerelease_cb.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
+                prerelease_cb.setChecked(_cfg.include_prerelease)
+                def _on_prerelease_toggled(checked):
+                    _c = _get_cfg()
+                    _c.set_include_prerelease(checked)
+                    _c.save()
+                prerelease_cb.toggled.connect(_on_prerelease_toggled)
+                layout.addWidget(prerelease_cb)
+                layout.addSpacing(4)
+
+            # 关闭 / 跳过此版本 按钮行
             close_layout = QHBoxLayout()
             close_layout.addStretch()
-            
+
+            if has_update and update_info:
+                skip_btn = QPushButton(self.i18n.t("update.skip_version"))
+                skip_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {COLORS['bg_card']};
+                        border: 1px solid {COLORS['border']};
+                        color: {COLORS['text_muted']};
+                        border-radius: 6px;
+                        padding: 8px 16px;
+                        font-size: 13px;
+                    }}
+                    QPushButton:hover {{
+                        border-color: {COLORS['text_muted']};
+                        color: {COLORS['text_secondary']};
+                    }}
+                """)
+                def _on_skip():
+                    from advanced_config import get_advanced_config as _get_cfg
+                    _cfg = _get_cfg()
+                    _cfg.set_ignored_update_version(update_info.get('version', ''))
+                    _cfg.save()
+                    dialog.accept()
+                skip_btn.clicked.connect(_on_skip)
+                close_layout.addWidget(skip_btn)
+                close_layout.addSpacing(8)
+
             close_btn = QPushButton(self.i18n.t("update.close"))
             close_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -2872,12 +3097,10 @@ class SuperPickyMainWindow(QMainWindow):
             """)
             close_btn.clicked.connect(dialog.accept)
             close_layout.addWidget(close_btn)
-            
+
             layout.addLayout(close_layout)
-            
-            print("[DEBUG] 即将显示弹窗")
+
             dialog.exec()
-            print("[DEBUG] 弹窗已关闭")
             
         except Exception as e:
             import traceback

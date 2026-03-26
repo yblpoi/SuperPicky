@@ -7,6 +7,14 @@ import csv
 from datetime import datetime
 from .file_utils import ensure_hidden_directory
 
+# 跟踪当前活跃的工作目录，供 sys.excepthook 写入错误日志使用
+_active_log_directory: str = None
+
+
+def get_active_log_directory() -> str:
+    """返回当前活跃的工作目录路径（用于错误日志定位）"""
+    return _active_log_directory
+
 
 def log_message(message: str, directory: str = None, file_only: bool = False):
     """
@@ -14,15 +22,18 @@ def log_message(message: str, directory: str = None, file_only: bool = False):
 
     Args:
         message: 日志消息
-        directory: 工作目录（可选，如果提供则写入该目录/superpicky_log.txt）
+        directory: 工作目录（可选，如果提供则写入该目录/superpicky.log）
         file_only: 仅写入文件，不打印到控制台（避免重复输出）
     """
+    global _active_log_directory
+
     # 打印到控制台（除非指定只写文件）
     if not file_only:
         print(message)
 
     # 如果提供了目录，写入日志文件到根目录（可见文件，方便排查问题）
     if directory:
+        _active_log_directory = directory  # 记录当前活跃目录
         log_file = os.path.join(directory, "superpicky.log")
         try:
             with open(log_file, 'a', encoding='utf-8') as f:

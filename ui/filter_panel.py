@@ -24,7 +24,8 @@ _RATING_OPTIONS = [
     ("3",     "★★★", [3, 4, 5]),
     ("2",     "★★",  [2]),
     ("1",     "★",   [1]),
-    ("0",     "0",   [0, -1]),   # 0星放弃 + 无鸟，合并显示
+    ("0",     "0",   [0]),          # 0星（有鸟但评分为0）
+    ("nobird", "×",  [-1]),         # 无鸟
 ]
 _DEFAULT_RATING = "3"
 
@@ -76,8 +77,8 @@ class FilterPanel(QWidget):
         self.i18n = i18n
         self._species_list: list = []
 
-        # 当前激活的单选状态
-        self._active_rating: str = _DEFAULT_RATING
+        # 当前激活的多选状态（set of mode keys）
+        self._active_ratings: set = {_DEFAULT_RATING}
         # 对焦多选状态（默认精焦+合焦）
         self._focus_checks: dict = {}  # mode -> QCheckBox（在 _build_focus_buttons 里填充）
 
@@ -238,8 +239,8 @@ class FilterPanel(QWidget):
 
         self._rating_btns: dict = {}  # mode -> QPushButton
 
-        # 窄按钮 mode 集合（★★/★/0/🏆 都固定宽度，留空间给 ★★★）
-        _narrow = {"2": 34, "1": 28, "0": 28, "picked": 32}
+        # 窄按钮 mode 集合（★★/★/0/×/🏆 都固定宽度，留空间给 ★★★）
+        _narrow = {"2": 30, "1": 24, "0": 24, "nobird": 24, "picked": 32}
 
         for mode, label, ratings in _RATING_OPTIONS:
             btn = QPushButton(label)
@@ -248,7 +249,7 @@ class FilterPanel(QWidget):
                 btn.setFixedWidth(_narrow[mode])
             else:
                 btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            active = (mode == _DEFAULT_RATING)
+            active = (mode in self._active_ratings)
             btn.setStyleSheet(self._rating_btn_style(active, mode))
             _m = mode
             btn.clicked.connect(lambda _=None, m=_m: self._on_rating_btn(m))
@@ -281,9 +282,13 @@ class FilterPanel(QWidget):
             )
 
     def _on_rating_btn(self, mode: str):
-        self._active_rating = mode
+        if mode in self._active_ratings:
+            self._active_ratings.discard(mode)
+            # 全取消时默认显示全部（不加限制），不强制恢复默认
+        else:
+            self._active_ratings.add(mode)
         for m, btn in self._rating_btns.items():
-            btn.setStyleSheet(self._rating_btn_style(m == mode, m))
+            btn.setStyleSheet(self._rating_btn_style(m in self._active_ratings, m))
         self._emit_filters()
 
     # ------------------------------------------------------------------
@@ -413,13 +418,12 @@ class FilterPanel(QWidget):
 
     def get_filters(self) -> dict:
         """返回当前筛选条件字典。"""
-        # 评分：当前激活的单选
+        # 评分：合并所有选中模式的 ratings（取并集），空选 = 不限星级（全选）
+        selected_ratings_set: set = set()
         for mode, label, ratings in _RATING_OPTIONS:
-            if mode == self._active_rating:
-                selected_ratings = ratings
-                break
-        else:
-            selected_ratings = [3]
+            if mode in self._active_ratings:
+                selected_ratings_set.update(ratings)
+        selected_ratings = sorted(selected_ratings_set) if selected_ratings_set else None
 
         # 对焦：所有勾选的 checkbox 对应的 statuses 合并
         selected_focus = []
@@ -447,7 +451,7 @@ class FilterPanel(QWidget):
             "is_flying":      is_flying,
             species_key:      bird_species,
             "sort_by":        sort_by,
-            "picked_only":    self._active_rating == "picked",
+            "picked_only":    "picked" in self._active_ratings,
         }
 
     # ------------------------------------------------------------------
@@ -457,7 +461,7 @@ class FilterPanel(QWidget):
     def reset_all(self):
         """重置筛选条件到默认值。"""
         # 评分 → 默认 ★★★
-        self._active_rating = _DEFAULT_RATING
+        self._active_ratings = {_DEFAULT_RATING}
         for m, btn in self._rating_btns.items():
             btn.setStyleSheet(self._rating_btn_style(m == _DEFAULT_RATING, m))
 
@@ -490,7 +494,10 @@ class FilterPanel(QWidget):
 
     def select_all_ratings(self):
         """回退：切换到 0星（所有有效照片）。用于默认筛选无结果时。"""
-        self._on_rating_btn("0")
+        self._active_ratings = {"0"}
+        for m, btn in self._rating_btns.items():
+            btn.setStyleSheet(self._rating_btn_style(m == "0", m))
+        self._emit_filters()
 
     # ------------------------------------------------------------------
     #  信号

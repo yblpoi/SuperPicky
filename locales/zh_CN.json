@@ -418,9 +418,24 @@
     "yolo_loaded": "✅ YOLO检测模型已加载",
     "keypoint_loaded": "✅ 关键点模型已加载",
     "flight_loaded": "✅ 飞版检测模型已加载",
+    "iqa_loaded": "✅ 美学评分模型已加载",
     "birdid_loaded": "✅ 识鸟模型已加载",
-    "preload_complete": "🎉 所有模型预加载完成！\n",
+    "preload_complete": "🎉 所有模型预加载完成！",
+    "preload_complete_with_errors": "⚠️ 预加载完成，部分模型失败: {failed}",
     "preload_failed": "⚠️ 模型预加载失败: {error}"
+  },
+  "health": {
+    "disk_status": "📁 磁盘空间: 剩余 {free} GB / 共 {total} GB {space_icon}  写权限: {write_icon} {write_label}",
+    "writable": "可写",
+    "not_writable": "无写权限",
+    "disk_check_failed": "⚠️ 磁盘检查失败: {error}",
+    "ram_ok": "💾 可用内存: {free} GB ✅",
+    "ram_low": "⚠️ 可用内存仅 {free} GB，模型加载可能较慢",
+    "exiftool_error_title": "ExifTool 不可用",
+    "exiftool_error_msg": "无法启动 ExifTool，照片评分将无法写入 EXIF 元数据。\n\n错误信息：{error}\n\n请重新安装应用或检查软件完整性。",
+    "no_photos_title": "未找到照片",
+    "no_photos_msg": "目录中没有支持的照片文件（JPG / RAW / HEIF）：\n{directory}",
+    "models_still_loading": "⚠️ 模型仍在后台预加载，处理时首张照片可能稍慢"
   },
   "stats": {
     "total": "总计",
@@ -771,7 +786,8 @@
     "download_hint": "如需下载，请前往官网：",
     "mac_version": "⌘ Mac 版",
     "windows_version": "⊞ Windows 版",
-    "close": "关闭"
+    "close": "关闭",
+    "include_prerelease": "接收预发布版本提醒（Beta / RC）"
   },
   "about": {
     "window_title": "关于",

@@ -57,6 +57,10 @@ from PySide6.QtGui import QIcon
 from app_user_stat.telemetry import bootstrap_telemetry
 from ui.main_window import SuperPickyMainWindow
 from ui.styles import APP_TOOLTIP_STYLE
+from tools.system_logger import setup_error_logging
+
+# 尽早捕获未处理异常，写入 superpicky.log（或 config dir fallback）
+setup_error_logging()
 
 # V3.9.3: 全局窗口引用，防止重复创建
 _main_window = None
