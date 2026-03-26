@@ -306,8 +306,35 @@ class WorkerThread(threading.Thread):
                 f"  Metadata Mode      : {_adv.get_metadata_write_mode()}",
                 f"  Skill Level        : {_adv.skill_level}",
                 f"  Language           : {_adv.language or 'Auto'}",
-                "=" * 60,
             ])
+            try:
+                from tools.system_logger import collect_system_info as _collect_sys
+                _si = _collect_sys()
+                _sys_lines = [
+                    "[System]",
+                    f"  App Version        : {_si.get('app_version', '?')}",
+                    f"  Launch Mode        : {_si.get('launch_mode', '?')}",
+                    f"  OS                 : {_si.get('os', '?')} {_si.get('os_release', '')}",
+                ]
+                if 'macos_version' in _si:
+                    _sys_lines.append(f"  macOS              : {_si['macos_version']}")
+                _sys_lines += [
+                    f"  Machine            : {_si.get('machine', '?')}",
+                    f"  Python             : {_si.get('python_version', '?')}",
+                    f"  RAM Total          : {_si.get('ram_total_gb', '?')} GB",
+                    f"  RAM Free           : {_si.get('ram_available_gb', '?')} GB",
+                    f"  AI Device          : {_si.get('ai_device', '?')}",
+                ]
+                if 'gpu_name' in _si:
+                    _sys_lines.append(f"  GPU                : {_si['gpu_name']}")
+                if 'gpu_vram_gb' in _si:
+                    _sys_lines.append(f"  VRAM               : {_si['gpu_vram_gb']} GB")
+                if 'cuda_version' in _si:
+                    _sys_lines.append(f"  CUDA               : {_si['cuda_version']}")
+                _session_header = _session_header + "\n" + "\n".join(_sys_lines)
+            except Exception:
+                pass
+            _session_header = _session_header + "\n" + "=" * 60
         except Exception as _hdr_err:
             # 会话头生成失败时写一个最简版本，不阻断处理流程
             _session_header = "\n".join([
