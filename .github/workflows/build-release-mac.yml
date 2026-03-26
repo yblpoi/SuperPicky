@@ -17,7 +17,7 @@ jobs:
         include:
           - runner: macos-14
             arch_tag: arm64
-          - runner: macos-13
+          - runner: macos-15-large
             arch_tag: Intel
 
     runs-on: ${{ matrix.runner }}
