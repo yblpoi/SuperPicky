@@ -1516,6 +1516,7 @@ class SuperPickyMainWindow(QMainWindow):
         self.dir_input.setText(directory)
 
         self._log(self.i18n.t("messages.dir_selected", directory=directory))
+        self._check_directory_health(directory)
 
         # 写入最近目录历史并刷新菜单
         self.config.add_recent_directory(directory)
@@ -1526,6 +1527,53 @@ class SuperPickyMainWindow(QMainWindow):
         self._resume_prompt_handled = False
         self._check_report_csv()
         self._maybe_prompt_resume_after_selection()
+
+    def _check_directory_health(self, directory: str):
+        """检查目标目录的磁盘空间和写权限，结果输出到 UI 日志。"""
+        import shutil, os
+        try:
+            usage = shutil.disk_usage(directory)
+            free_gb = usage.free / (1024 ** 3)
+            total_gb = usage.total / (1024 ** 3)
+
+            # 写权限检查（跨平台：os.access + 实际写测试）
+            can_write = os.access(directory, os.W_OK)
+            if can_write:
+                # 部分网络盘 os.access 返回 True 但实际不可写，做一次实写验证
+                try:
+                    test_path = os.path.join(directory, ".superpicky_write_test")
+                    with open(test_path, "w") as _f:
+                        _f.write("")
+                    os.remove(test_path)
+                except Exception:
+                    can_write = False
+
+            write_icon = "✅" if can_write else "❌"
+            write_label = self.i18n.t("health.writable") if can_write else self.i18n.t("health.not_writable")
+
+            if free_gb < 1.0:
+                space_icon = "❌"
+                level = "warning"
+            elif free_gb < 5.0:
+                space_icon = "⚠️"
+                level = "warning"
+            else:
+                space_icon = "✅"
+                level = "info"
+
+            self._log(
+                self.i18n.t(
+                    "health.disk_status",
+                    free=f"{free_gb:.1f}",
+                    total=f"{total_gb:.0f}",
+                    space_icon=space_icon,
+                    write_icon=write_icon,
+                    write_label=write_label,
+                ),
+                level,
+            )
+        except Exception as e:
+            self._log(self.i18n.t("health.disk_check_failed", error=str(e)), "warning")
 
     # ========== 状态条 + 结果浏览器辅助 ==========
 
@@ -2667,6 +2715,24 @@ class SuperPickyMainWindow(QMainWindow):
                 pass
 
         def preload_task():
+            # RAM 检查（psutil 可选依赖，缺失时跳过）
+            try:
+                import psutil
+                vm = psutil.virtual_memory()
+                free_gb = vm.available / (1024 ** 3)
+                if free_gb < 4.0:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_low", free=f"{free_gb:.1f}"),
+                        "warning",
+                    )
+                else:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_ok", free=f"{free_gb:.1f}"),
+                        "info",
+                    )
+            except ImportError:
+                pass  # psutil 未安装，跳过 RAM 检查
+
             _emit_and_log(self.i18n.t("preload.preloading_models"), "info")
             results = []
 

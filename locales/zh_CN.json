@@ -424,6 +424,14 @@
     "preload_complete_with_errors": "⚠️ 预加载完成，部分模型失败: {failed}",
     "preload_failed": "⚠️ 模型预加载失败: {error}"
   },
+  "health": {
+    "disk_status": "📁 磁盘空间: 剩余 {free} GB / 共 {total} GB {space_icon}  写权限: {write_icon} {write_label}",
+    "writable": "可写",
+    "not_writable": "无写权限",
+    "disk_check_failed": "⚠️ 磁盘检查失败: {error}",
+    "ram_ok": "💾 可用内存: {free} GB ✅",
+    "ram_low": "⚠️ 可用内存仅 {free} GB，模型加载可能较慢"
+  },
   "stats": {
     "total": "总计",
     "no_bird": "无鸟(-1星)",

@@ -424,6 +424,14 @@
     "preload_complete_with_errors": "⚠️ Preload done, some models failed: {failed}",
     "preload_failed": "⚠️ Model preload failed: {error}"
   },
+  "health": {
+    "disk_status": "📁 Disk: {free} GB free / {total} GB total {space_icon}  Write: {write_icon} {write_label}",
+    "writable": "OK",
+    "not_writable": "No write permission",
+    "disk_check_failed": "⚠️ Disk check failed: {error}",
+    "ram_ok": "💾 Available RAM: {free} GB ✅",
+    "ram_low": "⚠️ Low RAM: {free} GB — model loading may be slow"
+  },
   "stats": {
     "total": "Total",
     "no_bird": "No Bird(-1 star)",
