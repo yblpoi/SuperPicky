@@ -24,7 +24,8 @@ _RATING_OPTIONS = [
     ("3",     "★★★", [3, 4, 5]),
     ("2",     "★★",  [2]),
     ("1",     "★",   [1]),
-    ("0",     "0",   [0, -1]),   # 0星放弃 + 无鸟，合并显示
+    ("0",     "0",   [0]),          # 0星（有鸟但评分为0）
+    ("nobird", "×",  [-1]),         # 无鸟
 ]
 _DEFAULT_RATING = "3"
 
@@ -238,8 +239,8 @@ class FilterPanel(QWidget):
 
         self._rating_btns: dict = {}  # mode -> QPushButton
 
-        # 窄按钮 mode 集合（★★/★/0/🏆 都固定宽度，留空间给 ★★★）
-        _narrow = {"2": 34, "1": 28, "0": 28, "picked": 32}
+        # 窄按钮 mode 集合（★★/★/0/×/🏆 都固定宽度，留空间给 ★★★）
+        _narrow = {"2": 30, "1": 24, "0": 24, "nobird": 24, "picked": 32}
 
         for mode, label, ratings in _RATING_OPTIONS:
             btn = QPushButton(label)

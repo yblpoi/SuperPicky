@@ -512,13 +512,14 @@ class ReportDB:
         where_clauses = []
         params: List[Any] = []
 
-        # 永远排除无鸟记录（rating=-1），即使前端意外传入也过滤掉
-        where_clauses.append("rating != -1")
-
         ratings = filters.get("ratings")
+        requesting_nobird = isinstance(ratings, list) and -1 in ratings
+
+        # 只有未明确请求无鸟照片时才排除 rating=-1
+        if not requesting_nobird:
+            where_clauses.append("rating != -1")
+
         if isinstance(ratings, list):
-            # 过滤掉 -1（以防万一）
-            ratings = [r for r in ratings if r != -1]
             if not ratings:
                 return []
             placeholders = ", ".join(["?"] * len(ratings))
