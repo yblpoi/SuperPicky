@@ -797,7 +797,8 @@
     "download_hint": "To download, visit the official website:",
     "mac_version": "⌘ Mac",
     "windows_version": "⊞ Windows",
-    "close": "Close"
+    "close": "Close",
+    "include_prerelease": "Notify me about pre-release versions (Beta / RC)"
   },
   "about": {
     "window_title": "About James",

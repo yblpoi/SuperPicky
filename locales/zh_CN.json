@@ -771,7 +771,8 @@
     "download_hint": "如需下载，请前往官网：",
     "mac_version": "⌘ Mac 版",
     "windows_version": "⊞ Windows 版",
-    "close": "关闭"
+    "close": "关闭",
+    "include_prerelease": "接收预发布版本提醒（Beta / RC）"
   },
   "about": {
     "window_title": "关于",
