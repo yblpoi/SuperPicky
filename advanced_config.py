@@ -84,6 +84,10 @@ class AdvancedConfig:
         # 浏览器删除确认弹窗（首次弹窗后可勾选「不再确认」关闭）
         "delete_confirm": True,
 
+        # 更新提醒控制
+        "ignored_update_version": None,  # 跳过提醒的版本号，如 "4.3.0"
+        "include_prerelease": False,      # 是否接收 Beta/RC 更新提醒
+
         # 主界面复选框状态
         "flight_check": False,   # 飞鸟检测默认关闭（开启后速度较慢，用户可手动开启）
         "burst_check": False,    # 连拍检测默认关闭（开启后速度较慢，用户可手动开启）
@@ -351,8 +355,24 @@ class AdvancedConfig:
     def delete_confirm(self) -> bool:
         return self.config.get("delete_confirm", True)
 
+    @property
+    def ignored_update_version(self):
+        return self.config.get("ignored_update_version", None)
+
+    @property
+    def include_prerelease(self) -> bool:
+        return self.config.get("include_prerelease", False)
+
     def set_delete_confirm(self, value: bool):
         self.config["delete_confirm"] = bool(value)
+
+    def set_ignored_update_version(self, value):
+        """设置要跳过提醒的版本号，传 None 清除。"""
+        self.config["ignored_update_version"] = value if isinstance(value, str) else None
+
+    def set_include_prerelease(self, value: bool):
+        """设置是否接收预发布版本提醒。"""
+        self.config["include_prerelease"] = bool(value)
 
     # 主界面复选框状态 getter/setter
     @property
