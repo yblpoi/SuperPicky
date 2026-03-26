@@ -12,15 +12,7 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-14
-            arch_tag: arm64
-          - runner: macos-15-large
-            arch_tag: Intel
-
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     permissions:
       contents: write
 
@@ -151,7 +143,7 @@ jobs:
           DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
         run: |
           VERSION=$(python -c "from constants import APP_VERSION; print(APP_VERSION)")
-          DMG_NAME="SuperPicky_v${VERSION}_${{ matrix.arch_tag }}_${COMMIT_HASH}.dmg"
+          DMG_NAME="SuperPicky_v${VERSION}_arm64_${COMMIT_HASH}.dmg"
           DMG_TEMP="dist/dmg_temp"
 
           rm -rf "$DMG_TEMP"
