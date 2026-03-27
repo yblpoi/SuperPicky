@@ -87,6 +87,7 @@ class AdvancedConfig:
         # 更新提醒控制
         "ignored_update_version": None,  # 跳过提醒的版本号，如 "4.3.0"
         "include_prerelease": False,      # 是否接收 Beta/RC 更新提醒
+        "auto_check_updates": True,       # 启动时自动检查更新（含补丁）
 
         # 主界面复选框状态
         "flight_check": False,   # 飞鸟检测默认关闭（开启后速度较慢，用户可手动开启）
@@ -373,6 +374,14 @@ class AdvancedConfig:
     def set_include_prerelease(self, value: bool):
         """设置是否接收预发布版本提醒。"""
         self.config["include_prerelease"] = bool(value)
+
+    @property
+    def auto_check_updates(self) -> bool:
+        return self.config.get("auto_check_updates", True)
+
+    def set_auto_check_updates(self, value: bool):
+        """设置启动时是否自动检查更新。"""
+        self.config["auto_check_updates"] = bool(value)
 
     # 主界面复选框状态 getter/setter
     @property
