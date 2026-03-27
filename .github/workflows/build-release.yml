@@ -72,7 +72,7 @@ jobs:
         shell: pwsh
         run: |
           .\.venv\Scripts\python.exe scripts\download_models.py
-          .\.venv\Scripts\python.exe build_release_win.py --build-type cuda-patch --copy-dir output --debug
+          .\.venv\Scripts\python.exe build_release_win.py --build-type cuda-patch --copy-dir output --debug --no-zip
 
       - name: Create CPU installer with Inno Setup
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
@@ -90,10 +90,8 @@ jobs:
           New-Item -ItemType Directory -Path release_assets -Force | Out-Null
 
           $assetPatterns = @(
-            "output/SuperPicky_Win64_*_cpu.zip",
             "output/cuda_patch_installer/Output/SuperPicky_CUDA_Patch_Win64_*.exe",
-            "output/installer_cpu/Output/SuperPicky_Setup_Win64_*.exe",
-            "output/SuperPicky_Win64_*_cuda_patch.zip"
+            "output/installer_cpu/Output/SuperPicky_Setup_Win64_*.exe"
           )
 
           foreach ($pattern in $assetPatterns) {
@@ -103,6 +101,25 @@ jobs:
             }
             Copy-Item -Path $foundFiles[0].FullName -Destination release_assets/
           }
+
+      - name: Build code patch zip
+        shell: pwsh
+        run: |
+          $version = .\\.venv\\Scripts\\python.exe -c "from constants import APP_VERSION; print(APP_VERSION)"
+          $patchVersion = "v${version}"
+          $zipName = "code_patch_${patchVersion}.zip"
+          $zipPath = "release_assets/$zipName"
+
+          # 7-Zip 在 windows-latest runner 上内置
+          $items = @("constants.py", "tools", "core", "ui") | Where-Object { Test-Path $_ }
+          & "C:\Program Files\7-Zip\7z.exe" a -tzip $zipPath @items -xr!"__pycache__" -xr!"*.pyc" -xr!"*.pyo" | Out-Null
+
+          $meta = @{
+            patch_version = $patchVersion
+            base_version  = $version
+            applied_at    = (Get-Date -Format "o")
+          } | ConvertTo-Json
+          $meta | Out-File -Encoding utf8 "release_assets/patch_meta.json"
 
       - name: Clean telemetry build override
         if: always()
@@ -118,47 +135,23 @@ jobs:
           files: |
             release_assets/*
 
-      - name: Upload Windows assets to GitCode
+      - name: Create GitCode Release
+        continue-on-error: true
         shell: pwsh
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
           TAG: ${{ steps.release_meta.outputs.tag }}
         run: |
-          $projectId = "Jamesphotography%2FSuperPicky"
-          $baseUrl = "https://gitcode.com/api/v4/projects/$projectId"
-          $headers = @{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN }
+          $baseUrl = "https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
           $tag = $env:TAG
-          $links = @()
+          $headers = @{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" }
 
-          foreach ($file in Get-ChildItem release_assets -File) {
-            $filename = $file.Name
-            $uploadUrl = "$baseUrl/packages/generic/release/$tag/$filename"
-            Invoke-RestMethod -Uri $uploadUrl -Method Put -InFile $file.FullName -Headers $headers
-            $links += @{
-              name      = $filename
-              url       = "https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release/$tag/$filename"
-              link_type = "package"
-            }
-          }
-
-          $changelog = Get-Content ChangeLog.md -Raw
-          $body = @{
-            tag_name    = $tag
-            name        = "SuperPicky $tag"
-            description = $changelog
-            assets      = @{ links = $links }
-          } | ConvertTo-Json -Depth 5
-
+          # 尝试创建 GitCode Release（Mac job 可能已抢先创建，忽略冲突）
+          $body = @{ tag_name = $tag; name = "SuperPicky $tag"; description = "See GitHub release for details." } | ConvertTo-Json
           try {
-            Invoke-RestMethod -Uri "$baseUrl/releases" -Method Post -Body $body `
-              -Headers (@{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" })
+            Invoke-RestMethod -Uri "$baseUrl/releases" -Method Post -Body $body -Headers $headers -ErrorAction Stop
           } catch {
-            # Release may already exist (created by mac job), add links only
-            foreach ($link in $links) {
-              $linkBody = $link | ConvertTo-Json
-              Invoke-RestMethod -Uri "$baseUrl/releases/$tag/assets/links" -Method Post -Body $linkBody `
-                -Headers (@{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" }) -ErrorAction SilentlyContinue
-            }
+            Write-Host "Release already exists or creation failed, continuing..."
           }
 
   build-mac:
@@ -305,6 +298,14 @@ jobs:
             cp -R "SuperBirdIDPlugin.lrplugin" "${DMG_TEMP}/"
           fi
 
+          # Applications 快捷方式（标准拖拽安装体验）
+          ln -s /Applications "${DMG_TEMP}/Applications"
+
+          # README 安装说明
+          if [ -f "resources/DMG_README.txt" ]; then
+            cp "resources/DMG_README.txt" "${DMG_TEMP}/README.txt"
+          fi
+
           hdiutil create -volname "SuperPicky ${VERSION}" \
             -srcfolder "$DMG_TEMP" \
             -ov -format UDZO \
@@ -339,6 +340,57 @@ jobs:
           xcrun stapler staple "${DMG_PATH}"
           xcrun stapler validate "${DMG_PATH}"
 
+      - name: Build code patch zip
+        run: |
+          VERSION=$(python3 -c "from constants import APP_VERSION; print(APP_VERSION)")
+          PATCH_VERSION="v${VERSION}"
+          ZIP_NAME="code_patch_${PATCH_VERSION}.zip"
+
+          zip -r "dist/${ZIP_NAME}" constants.py tools/ core/ ui/ \
+            --exclude "**/__pycache__/*" --exclude "**/*.pyc" --exclude "**/*.pyo"
+
+          APPLIED_AT=$(python3 -c "import datetime; print(datetime.datetime.now(datetime.timezone.utc).isoformat())")
+          printf '{"patch_version":"%s","base_version":"%s","applied_at":"%s"}\n' \
+            "$PATCH_VERSION" "$VERSION" "$APPLIED_AT" > dist/patch_meta.json
+
+          echo "PATCH_ZIP=dist/${ZIP_NAME}" >> "$GITHUB_ENV"
+          echo "PATCH_META=dist/patch_meta.json" >> "$GITHUB_ENV"
+
+      - name: Push patch files to mirror server
+        continue-on-error: true
+        env:
+          MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
+          TAG: ${{ steps.release_meta.outputs.tag }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$MIRROR_SSH_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+
+          VERSION=$(python3 -c "from constants import APP_VERSION; print(APP_VERSION)")
+          PATCH_VERSION="v${VERSION}"
+          MIRROR_BASE="http://1.119.150.179:59080/superpicky"
+
+          # 生成 latest.json（供中国大陆用户版本查询 fallback）
+          python3 -c "import json,datetime,sys; d={'tag_name':sys.argv[1],'version':sys.argv[2],'published_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'patch_meta_url':sys.argv[3]+'/patch_meta.json','patch_zip_url':sys.argv[3]+'/code_patch_'+sys.argv[4]+'.zip'}; json.dump(d,open('dist/latest.json','w'),indent=2)" "$TAG" "$VERSION" "$MIRROR_BASE" "$PATCH_VERSION"
+
+          # 建立远端目录
+          ssh -i ~/.ssh/mirror_key -p 22 \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            jordan@1.119.150.179 \
+            "mkdir -p /opt/1panel/www/sites/github/index/superpicky"
+
+          # 推送 latest.json、patch_meta.json、code_patch zip
+          scp -i ~/.ssh/mirror_key -P 22 \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            dist/latest.json \
+            "${PATCH_META}" \
+            "${PATCH_ZIP}" \
+            jordan@1.119.150.179:/opt/1panel/www/sites/github/index/superpicky/
+
+          rm -f ~/.ssh/mirror_key
+
       - name: Clean up
         if: always()
         run: |
@@ -351,39 +403,55 @@ jobs:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           name: ${{ steps.release_meta.outputs.name }}
           body_path: ChangeLog.md
-          files: ${{ env.DMG_PATH }}
+          files: |
+            ${{ env.DMG_PATH }}
+            ${{ env.PATCH_ZIP }}
+            ${{ env.PATCH_META }}
 
-      - name: Upload Mac DMG to GitCode
+      - name: Upload patch files to GitCode
+        continue-on-error: true
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
           TAG: ${{ steps.release_meta.outputs.tag }}
         run: |
-          PROJECT_ID="Jamesphotography%2FSuperPicky"
-          BASE_URL="https://gitcode.com/api/v4/projects/$PROJECT_ID"
-          FILENAME=$(basename "${DMG_PATH}")
+          BASE_URL="https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
+          FILE_BASE="https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release"
+          PATCH_ZIP_NAME=$(basename "${PATCH_ZIP}")
 
-          curl --fail -T "${DMG_PATH}" \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            "$BASE_URL/packages/generic/release/$TAG/$FILENAME"
+          # 上传三个小文件到 GitCode generic packages（不上传大 DMG，避免 413）
+          for FILE in dist/latest.json "${PATCH_META}" "${PATCH_ZIP}"; do
+            FILENAME=$(basename "$FILE")
+            curl -s --fail -T "$FILE" \
+              --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+              "$BASE_URL/packages/generic/release/$TAG/$FILENAME" || true
+          done
 
-          CHANGELOG=$(cat ChangeLog.md)
-          LINK_URL="https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release/$TAG/$FILENAME"
-
-          RELEASE_BODY=$(printf '{"tag_name":"%s","name":"SuperPicky %s","description":"%s","assets":{"links":[{"name":"%s","url":"%s","link_type":"package"}]}}' \
-            "$TAG" "$TAG" "$(echo "$CHANGELOG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" | tr -d '"')" \
-            "$FILENAME" "$LINK_URL")
-
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+          # 尝试在 GitCode 创建 Release（Windows job 可能已抢先创建，忽略冲突）
+          curl -s \
             --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
             --header "Content-Type: application/json" \
             --request POST \
-            --data "{\"tag_name\":\"$TAG\",\"name\":\"SuperPicky $TAG\",\"description\":\"See GitHub release for details.\",\"assets\":{\"links\":[{\"name\":\"$FILENAME\",\"url\":\"$LINK_URL\",\"link_type\":\"package\"}]}}" \
-            "$BASE_URL/releases")
+            --data "{\"tag_name\":\"$TAG\",\"name\":\"SuperPicky $TAG\",\"description\":\"See GitHub release for details.\"}" \
+            "$BASE_URL/releases" || true
 
-          if [ "$HTTP_STATUS" != "201" ]; then
-            curl -s --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-              --header "Content-Type: application/json" \
-              --request POST \
-              --data "{\"name\":\"$FILENAME\",\"url\":\"$LINK_URL\",\"link_type\":\"package\"}" \
-              "$BASE_URL/releases/$TAG/assets/links"
-          fi
+          # 添加补丁文件 asset links 到 GitCode Release
+          curl -s \
+            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data "{\"name\":\"patch_meta.json\",\"url\":\"$FILE_BASE/$TAG/patch_meta.json\",\"link_type\":\"package\"}" \
+            "$BASE_URL/releases/$TAG/assets/links" || true
+
+          curl -s \
+            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data "{\"name\":\"$PATCH_ZIP_NAME\",\"url\":\"$FILE_BASE/$TAG/$PATCH_ZIP_NAME\",\"link_type\":\"package\"}" \
+            "$BASE_URL/releases/$TAG/assets/links" || true
+
+          curl -s \
+            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data "{\"name\":\"latest.json\",\"url\":\"$FILE_BASE/$TAG/latest.json\",\"link_type\":\"package\"}" \
+            "$BASE_URL/releases/$TAG/assets/links" || true

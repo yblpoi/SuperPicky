@@ -39,8 +39,15 @@ class I18n:
             # PyInstaller packaged mode
             base_dir = Path(sys._MEIPASS)
         else:
-            # Normal development mode
-            base_dir = Path(__file__).parent.parent
+            # Development mode: handle patch overlay (code_updates/) correctly
+            candidate = Path(__file__).parent.parent
+            if not (candidate / "locales").exists():
+                # Loaded from code_updates/, walk sys.path to find real project root
+                for p in sys.path:
+                    if p and (Path(p) / "locales").exists():
+                        candidate = Path(p)
+                        break
+            base_dir = candidate
 
         self.locales_dir = base_dir / "locales"
         self.translations: Dict[str, Any] = {}

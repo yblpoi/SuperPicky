@@ -21,6 +21,18 @@ multiprocessing.freeze_support()
 # 确保模块路径正确
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 在线补丁层：优先加载用户数据目录下的 code_updates/（覆盖内置模块）
+def _inject_patch_path():
+    if sys.platform == "darwin":
+        _patch_dir = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "SuperPicky", "code_updates")
+    elif sys.platform == "win32":
+        _patch_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "SuperPicky", "code_updates")
+    else:
+        _patch_dir = os.path.join(os.path.expanduser("~"), ".config", "SuperPicky", "code_updates")
+    if os.path.isdir(_patch_dir) and _patch_dir not in sys.path:
+        sys.path.insert(0, _patch_dir)
+_inject_patch_path()
+
 # Fix Windows console encoding: default cp1252 cannot render emoji/CJK characters,
 # causing UnicodeEncodeError crashes on print(). Reconfigure to UTF-8 with replacement
 # fallback so all log output survives regardless of the console codepage.
