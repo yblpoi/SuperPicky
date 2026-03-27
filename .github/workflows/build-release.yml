@@ -357,7 +357,7 @@ jobs:
           TAG: ${{ steps.release_meta.outputs.tag }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s' "$MIRROR_SSH_KEY" > ~/.ssh/mirror_key
+          echo "$MIRROR_SSH_KEY" > ~/.ssh/mirror_key
           chmod 600 ~/.ssh/mirror_key
 
           VERSION=$(python3 -c "from constants import APP_VERSION; print(APP_VERSION)")
