@@ -298,6 +298,14 @@ jobs:
             cp -R "SuperBirdIDPlugin.lrplugin" "${DMG_TEMP}/"
           fi
 
+          # Applications 快捷方式（标准拖拽安装体验）
+          ln -s /Applications "${DMG_TEMP}/Applications"
+
+          # README 安装说明
+          if [ -f "resources/DMG_README.txt" ]; then
+            cp "resources/DMG_README.txt" "${DMG_TEMP}/README.txt"
+          fi
+
           hdiutil create -volname "SuperPicky ${VERSION}" \
             -srcfolder "$DMG_TEMP" \
             -ov -format UDZO \
