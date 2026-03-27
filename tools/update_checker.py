@@ -212,12 +212,12 @@ class UpdateChecker:
             return has_update, update_info
             
         except (urllib.error.URLError, json.JSONDecodeError, Exception) as e:
-            print(f"⚠️ GitHub API 不可达 ({type(e).__name__}): {e}，尝试 GitCode...")
-            result = self._check_from_gitcode()
+            print(f"⚠️ GitHub API 不可达 ({type(e).__name__}): {e}，尝试北京镜像...")
+            result = self._check_from_mirror()
             if result[1] and 'error' not in result[1]:
                 return result
-            print("⚠️ GitCode 也不可达，尝试北京镜像...")
-            return self._check_from_mirror()
+            print("⚠️ 北京镜像不可达，尝试 GitCode...")
+            return self._check_from_gitcode()
 
     def _check_from_gitcode(self) -> Tuple[bool, Optional[Dict]]:
         """

@@ -212,7 +212,6 @@ def check_and_apply_patch_from_gitcode(
     print(f"[PatchManager] 从 GitCode 下载补丁 {remote_patch_version} ...")
     tmp_path = _download_to_temp(zip_url, timeout=timeout) if zip_url else None
     if not tmp_path:
-        # GitCode CDN 失败，降级到北京镜像
         mirror_zip_url = f"{MIRROR_BASE_URL}/code_patch_{remote_patch_version}.zip"
         print(f"[PatchManager] GitCode CDN 失败，尝试北京镜像: {mirror_zip_url}")
         tmp_path = _download_to_temp(mirror_zip_url, timeout=timeout)
@@ -322,19 +321,19 @@ def check_and_apply_patch(
     if not zip_url:
         return False, f"Release 中找不到 code_patch_{remote_patch_version}.zip"
 
-    # 6. 下载 zip（三级降级：GitHub CDN → GitCode → 北京镜像）
+    # 6. 下载 zip（三级降级：GitHub CDN → 北京镜像 → GitCode）
     print(f"[PatchManager] 下载补丁 {remote_patch_version} ...")
     tmp_path = _download_to_temp(zip_url, timeout=timeout)
     if not tmp_path:
-        gitcode_zip_url = f"{GITCODE_FILE_BASE}/{remote_patch_version}/code_patch_{remote_patch_version}.zip"
-        print(f"[PatchManager] GitHub CDN 失败，尝试 GitCode: {gitcode_zip_url}")
-        tmp_path = _download_to_temp(gitcode_zip_url, timeout=timeout)
-    if not tmp_path:
         mirror_zip_url = f"{MIRROR_BASE_URL}/code_patch_{remote_patch_version}.zip"
-        print(f"[PatchManager] GitCode 失败，尝试北京镜像: {mirror_zip_url}")
+        print(f"[PatchManager] GitHub CDN 失败，尝试北京镜像: {mirror_zip_url}")
         tmp_path = _download_to_temp(mirror_zip_url, timeout=timeout)
     if not tmp_path:
-        return False, "补丁 zip 下载失败（GitHub + GitCode + 北京镜像均不可用）"
+        gitcode_zip_url = f"{GITCODE_FILE_BASE}/{remote_patch_version}/code_patch_{remote_patch_version}.zip"
+        print(f"[PatchManager] 北京镜像失败，尝试 GitCode: {gitcode_zip_url}")
+        tmp_path = _download_to_temp(gitcode_zip_url, timeout=timeout)
+    if not tmp_path:
+        return False, "补丁 zip 下载失败（GitHub + 北京镜像 + GitCode 均不可用）"
 
     # 7. 解压并写入 meta
     try:
