@@ -159,9 +159,10 @@ class KeypointDetector:
         
         with torch.inference_mode():
             coords, vis = self.model(tensor)
-        
+
         coords = coords[0].cpu().numpy()
         vis = vis[0].cpu().numpy()
+        del tensor  # 立即释放 MPS/CUDA 显存，避免长批次累积
         
         # 解析结果
         left_eye = (float(coords[0, 0]), float(coords[0, 1]))

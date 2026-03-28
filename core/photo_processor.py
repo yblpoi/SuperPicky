@@ -1544,9 +1544,11 @@ class PhotoProcessor:
                 progress = int((i / total_files) * 100)
                 self._progress(progress)
 
-            # 周期性 GPU 显存清理（每 200 张）
-            # MPS 不像 CUDA 会自动回收，长批次（如 13000 张）会导致显存耗尽
-            if i % 200 == 0:
+            # 周期性 GPU 显存清理（MPS 每 50 张，CUDA 每 200 张）
+            # MPS 不像 CUDA 会自动回收，MacBook 可用内存比 Mac Mini 少，需更频繁清理
+            _cache_interval = 50 if (hasattr(torch, 'backends') and
+                                     torch.backends.mps.is_available()) else 200
+            if i % _cache_interval == 0:
                 try:
                     import torch, gc
                     if torch.backends.mps.is_available():

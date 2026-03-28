@@ -169,11 +169,12 @@ class FlightDetector:
         
         # 预处理
         image_tensor = self.transform(pil_image).unsqueeze(0).to(self.device)
-        
+
         # 推理
         with torch.no_grad():
             prob = self.model(image_tensor).item()
-        
+        del image_tensor  # 立即释放 MPS/CUDA 显存，避免长批次累积
+
         return FlightResult(
             is_flying=prob > threshold,
             confidence=prob
