@@ -31,6 +31,12 @@ def _inject_patch_path():
         _patch_dir = os.path.join(os.path.expanduser("~"), ".config", "SuperPicky", "code_updates")
     if os.path.isdir(_patch_dir) and _patch_dir not in sys.path:
         sys.path.insert(0, _patch_dir)
+    # 记录真实 app 根目录，供补丁中的模块查找资源文件（模型、exiftool 等）
+    if not hasattr(sys, '_SUPERPICKY_APP_ROOT'):
+        if hasattr(sys, '_MEIPASS'):
+            sys._SUPERPICKY_APP_ROOT = sys._MEIPASS
+        else:
+            sys._SUPERPICKY_APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 _inject_patch_path()
 
 # Fix Windows console encoding: default cp1252 cannot render emoji/CJK characters,

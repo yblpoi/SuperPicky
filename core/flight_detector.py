@@ -56,8 +56,9 @@ class FlightDetector:
                 # PyInstaller 打包后的路径
                 self.model_path = Path(sys._MEIPASS) / "models" / "superFlier_efficientnet.pth"
             else:
-                # 开发环境：项目根目录/models/
-                project_root = Path(__file__).parent.parent
+                # 开发环境：优先使用 main.py 注入的真实 app 根目录（补丁覆盖层兼容）
+                project_root = Path(getattr(sys, '_SUPERPICKY_APP_ROOT',
+                                            str(Path(__file__).parent.parent)))
                 self.model_path = project_root / "models" / "superFlier_efficientnet.pth"
         else:
             self.model_path = Path(model_path)

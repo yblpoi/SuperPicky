@@ -96,8 +96,10 @@ class ExifToolManager:
                 return system_exiftool
             
             # 回退到项目目录下的 exiftool
-            project_root = os.path.dirname(os.path.abspath(__file__))
-            project_parent = os.path.dirname(project_root)  # 父目录：D:\KaiFa\SuperPicky
+            # 优先使用 main.py 注入的真实 app 根目录（补丁覆盖层兼容）
+            project_parent = getattr(sys, '_SUPERPICKY_APP_ROOT',
+                                     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            project_root = os.path.join(project_parent, 'tools')
             print(f"🔍 Development environment detected")
             print(f"   project_root: {project_root}")
             print(f"   project_parent: {project_parent}")

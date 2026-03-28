@@ -104,8 +104,9 @@ class BurstDetector:
             if os.path.exists(fallback):
                 return fallback
         
-        # 开发环境: 优先使用项目内置的 exiftool
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # 开发环境: 优先使用项目内置的 exiftool（优先使用 main.py 注入的真实 app 根目录）
+        project_root = getattr(sys, '_SUPERPICKY_APP_ROOT',
+                               os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
         # Windows 平台优先检查 exiftools_win 目录
         if is_windows:
