@@ -61,11 +61,15 @@ def resource_path(relative_path: str) -> str:
 
 def get_app_config_dir(app_name: str = 'SuperPicky') -> Path:
     """
-    返回跨平台应用配置目录。
+    返回跨平台应用配置目录（存放 advanced_config.json、补丁等程序配置）。
     Return the cross-platform application config directory.
 
-    这是 `advanced_config.json` 的默认根目录。
-    This is the default root directory for `advanced_config.json`.
+    ⚠️  与 get_app_data_dir() 完全不同的路径，请勿混用：
+      macOS : ~/Library/Application Support/SuperPicky/
+      Windows: ~/AppData/Local/SuperPicky/
+      Linux  : ~/.config/SuperPicky/
+
+    用途：advanced_config.json、code_updates/（补丁目录）等程序级配置。
     """
     if sys.platform == 'darwin':
         return Path.home() / 'Library' / 'Application Support' / app_name
@@ -76,11 +80,14 @@ def get_app_config_dir(app_name: str = 'SuperPicky') -> Path:
 
 def get_app_data_dir(app_name: str = 'SuperPicky') -> Path:
     """
-    返回跨平台用户数据目录。
+    返回跨平台用户数据目录（存放 birdid 设置等用户产物）。
     Return the cross-platform user data directory.
 
-    这里存放更接近用户产物的数据，而不是程序内置资源。
-    This stores data that behaves more like user-owned artifacts rather than bundled resources.
+    ⚠️  与 get_app_config_dir() 完全不同的路径，请勿混用：
+      所有平台：~/Documents/SuperPicky_Data/
+
+    用途：birdid_dock_settings.json 等用户可见的数据文件。
+    切勿用于存放补丁或程序内部配置（应使用 get_app_config_dir()）。
     """
     return Path.home() / 'Documents' / f'{app_name}_Data'
 
