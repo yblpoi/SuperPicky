@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+import threading
 import rawpy
 import imageio
 from .utils import log_message
@@ -7,6 +10,40 @@ import glob
 import shutil
 
 from .file_utils import ensure_hidden_directory, clear_readonly_attribute
+
+
+_EXIFTOOL_CLI_INFO = None
+_EXIFTOOL_CLI_INFO_LOCK = threading.Lock()
+
+
+def _get_exiftool_cli_info():
+    global _EXIFTOOL_CLI_INFO
+    if _EXIFTOOL_CLI_INFO is None:
+        with _EXIFTOOL_CLI_INFO_LOCK:
+            if _EXIFTOOL_CLI_INFO is None:
+                manager = get_exiftool_manager()
+                exiftool_path = manager.exiftool_path
+                exiftool_cwd = os.path.dirname(os.path.abspath(exiftool_path))
+                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+                _EXIFTOOL_CLI_INFO = (exiftool_path, exiftool_cwd, creationflags)
+    return _EXIFTOOL_CLI_INFO
+
+
+def _extract_binary_via_exiftool_cli(raw_file_path, tag):
+    exiftool_path, exiftool_cwd, creationflags = _get_exiftool_cli_info()
+    result = subprocess.run(
+        [exiftool_path, '-b', tag, raw_file_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=False,
+        cwd=exiftool_cwd,
+        creationflags=creationflags,
+        check=False
+    )
+    if result.returncode != 0:
+        stderr_text = result.stderr.decode('utf-8', errors='replace').strip()
+        raise RuntimeError(stderr_text or f"ExifTool exited with code {result.returncode}")
+    return result.stdout
 
 def raw_to_jpeg(raw_file_path):
     filename = os.path.basename(raw_file_path)
@@ -40,21 +77,20 @@ def raw_to_jpeg(raw_file_path):
         return _raw_to_jpeg_via_heif(raw_file_path, jpg_file_path, directory_path)
 
     try:
-        with open(raw_file_path, 'rb') as f:
-            with rawpy.imread(raw_file_path) as raw:
-                thumbnail = raw.extract_thumb()
-                if thumbnail is None:
-                    log_message(f"DEBUG: rawpy extract_thumb is None for {filename}", directory_path)
-                    return None
-                if thumbnail.format == rawpy.ThumbFormat.JPEG:
-                    with open(jpg_file_path, 'wb') as f:
-                        f.write(thumbnail.data)
-                elif thumbnail.format == rawpy.ThumbFormat.BITMAP:
-                    imageio.imsave(jpg_file_path, thumbnail.data)
+        with rawpy.imread(raw_file_path) as raw:
+            thumbnail = raw.extract_thumb()
+            if thumbnail is None:
+                log_message(f"DEBUG: rawpy extract_thumb is None for {filename}", directory_path)
+                return None
+            if thumbnail.format == rawpy.ThumbFormat.JPEG:
+                with open(jpg_file_path, 'wb') as f:
+                    f.write(thumbnail.data)
+            elif thumbnail.format == rawpy.ThumbFormat.BITMAP:
+                imageio.imsave(jpg_file_path, thumbnail.data)
                 # 成功转换——已由 photo_processor 的批量日志统计，无需逐文件记录
-                return jpg_file_path
+            return jpg_file_path
     except rawpy._rawpy.LibRawFileUnsupportedError:
-        # LibRaw 不支持的格式（如 Sony A7M5 NeXt/Compressed RAW 2）
+        # LibRaw 不支持的格式（如 Sony A7M5 的已压缩 ARW）
         log_message(f"DEBUG: rawpy unsupported format for {filename}, falling back to ExifTool", directory_path)
         return _raw_to_jpeg_via_exiftool(raw_file_path, jpg_file_path, directory_path)
     except Exception as e:
@@ -84,15 +120,16 @@ def _raw_to_jpeg_via_heif(raw_file_path, jpg_file_path, directory_path):
 def _raw_to_jpeg_via_exiftool(raw_file_path, jpg_file_path, directory_path):
     """
     使用 ExifTool 从 RAW 提取内嵌 JPEG (V4.2.1: 使用统一的 ExifToolManager)
-    用于 LibRaw 不支持的格式（如 Sony A7M5 NeXt/Compressed RAW 2）。
+    用于 LibRaw 不支持的格式（如 Sony A7M5 的已压缩 ARW）。
     """
-    manager = get_exiftool_manager()
+    # Use standalone CLI calls here because binary extraction through the
+    # persistent ExifToolManager path is significantly slower for A7M5 compressed ARWs.
     
     # 按优先级尝试提取不同的内嵌图
     for tag in ["-JpgFromRaw", "-PreviewImage", "-ThumbnailImage"]:
         try:
             # 使用常驻进程提取二进制
-            stdout_bytes = manager.extract_binary(raw_file_path, tag)
+            stdout_bytes = _extract_binary_via_exiftool_cli(raw_file_path, tag)
             
             if stdout_bytes and len(stdout_bytes) > 1000:
                 with open(jpg_file_path, "wb") as f:
