@@ -33,16 +33,6 @@ Thanks to **Juntao Zhang** for sponsoring one quarter of AI coding tools for thi
 
 ---
 
-## Downloads
-
-| Platform | GitHub | Baidu | Quark |
-|---|---|---|---|
-| macOS ARM64 (Apple Silicon) | [Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.2.1-beta/SuperPicky_v4.2.1-beta_arm64_ec200340.dmg) | [Baidu (6s4k)](https://pan.baidu.com/s/1hJaHKGB7Rni1AoLddsTV1g?pwd=6s4k) | [Quark](https://pan.quark.cn/s/3d3652d53972) |
-| Windows CPU Only | [Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.2.1-beta/SuperPicky_Win64_4.2.1-beta_ec20034_cpu.zip) | [Baidu (39f1)](https://pan.baidu.com/s/1iEjbypJKQh34mrvAvHA82Q?pwd=39f1) | [Quark](https://pan.quark.cn/s/08065f16a8d1) |
-| Windows CUDA GPU Patch | [Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.2.1-beta/SuperPicky_Win64_4.2.1-beta_ec20034_cuda_patch.zip) | [Baidu (n2uj)](https://pan.baidu.com/s/1-JL4mn8cMKRJCSwXaQhB6Q?pwd=n2uj) | [Quark](https://pan.quark.cn/s/2caa4af00b1b) |
-
-> This is a Beta release. For production use, please use v4.1.0 LTS.
-
 ---
 
 ## 更新内容
