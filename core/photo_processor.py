@@ -1337,7 +1337,7 @@ class PhotoProcessor:
 
         def _reload_yolo_if_mps():
             """在 yolo_infer_lock 保护下重载 YOLO，完整释放旧模型的 MPS 状态。"""
-            if not _use_mps:
+            if not mps_available:
                 return
             with yolo_infer_lock:
                 old_model = _yolo_model_box[0]
@@ -1357,7 +1357,7 @@ class PhotoProcessor:
                 try:
                     for idx, queued_filename in enumerate(files_tbr, 1):
                         # MPS 周期重载：在推理前执行，确保新模型处理后续批次
-                        if _use_mps and idx > 1 and (idx - 1) % _YOLO_MPS_RELOAD_INTERVAL == 0:
+                        if mps_available and idx > 1 and (idx - 1) % _YOLO_MPS_RELOAD_INTERVAL == 0:
                             _reload_yolo_if_mps()
                         yolo_result_queue.put(build_yolo_item(idx, queued_filename))
                 finally:
@@ -1599,7 +1599,7 @@ class PhotoProcessor:
                     pass
 
             # 非预取模式下的 MPS YOLO 周期重载（预取模式已在 worker 里处理）
-            if (not yolo_prefetch_enabled) and _use_mps and i > 1 and (i - 1) % _YOLO_MPS_RELOAD_INTERVAL == 0:
+            if (not yolo_prefetch_enabled) and mps_available and i > 1 and (i - 1) % _YOLO_MPS_RELOAD_INTERVAL == 0:
                 _reload_yolo_if_mps()
             
             result = yolo_item.get('result')
