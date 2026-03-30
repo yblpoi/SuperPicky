@@ -196,15 +196,17 @@ jobs:
               }
             }
           }
-          $json | ConvertTo-Json -Depth 5 | Out-File -Encoding utf8NoBOM "docs/downloads_github.json"
-
+          # 保存 JSON 内容，切换到 nightly 分支后写入并推送
+          $jsonContent = $json | ConvertTo-Json -Depth 5
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin nightly
+          git checkout -B nightly origin/nightly
+          $jsonContent | Out-File -Encoding utf8NoBOM "docs/downloads_github.json"
           git add docs/downloads_github.json
           git diff --cached --quiet && exit 0
           git commit -m "chore(web): 自动更新 downloads_github.json → $tag [skip ci]"
-          git pull --rebase origin $env:REF
-          git push origin HEAD:$env:REF
+          git push origin HEAD:nightly
 
   build-mac:
     runs-on: macos-14
