@@ -1,0 +1,10 @@
+{
+  "beta": {
+    "tag": "v4.2.5-RC11",
+    "files": {
+      "mac_arm64": null,
+      "win_cpu": null,
+      "win_cuda": null
+    }
+  }
+}

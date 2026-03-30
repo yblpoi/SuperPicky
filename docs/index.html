@@ -56,8 +56,8 @@
 
             <div class="hero-cta">
                 <a href="#download-beta" class="btn btn-primary btn-beta">
-                    <span class="lang-cn">🆕 下载 V4.2.5-RC11</span>
-                    <span class="lang-en">🆕 Download V4.2.5-RC11</span>
+                    <span class="lang-cn">🆕 下载 <span id="hero-beta-tag-cn">最新测试版</span></span>
+                    <span class="lang-en">🆕 Download <span id="hero-beta-tag-en">Latest Beta</span></span>
                     <span class="btn-version">Latest Beta</span>
                 </a>
                 <a href="#download" class="btn btn-secondary">
@@ -312,100 +312,17 @@
         </div>
     </section>
 
-    <!-- Beta Download Section -->
+    <!-- Beta Download Section (动态渲染，数据来自 downloads_github.json / downloads_gitcode.json) -->
     <section class="download-section" id="download-beta">
         <div class="container">
             <div class="section-header">
                 <span class="section-label">
-                    <span class="lang-cn">🆕 下载 V4.2.5-RC11</span>
-                    <span class="lang-en">🆕 Download V4.2.5-RC11</span>
+                    <span class="lang-cn">🆕 下载 <span id="beta-section-tag-cn">最新测试版</span></span>
+                    <span class="lang-en">🆕 Download <span id="beta-section-tag-en">Latest Beta</span></span>
                 </span>
             </div>
-            <div class="download-cards">
-                <!-- Mac ARM64 V4.2.5-RC11 -->
-                <div class="download-card featured">
-                    <div class="download-info">
-                        <div class="download-icon">
-                            <img src="img/icon.png" alt="SuperPicky">
-                        </div>
-                        <div class="download-meta">
-                            <h3>SuperPicky <span class="platform-badge">macOS</span> <span class="beta-badge">🆕 V4.2.5-RC11</span></h3>
-                            <p class="download-version">v4.2.5-RC11 · Apple Silicon (M1/M2/M3/M4/M5)</p>
-                        </div>
-                    </div>
-                    <div class="download-links">
-                        <a href="https://github.com/jamesphotography/SuperPicky/releases/download/v4.2.5-RC11/SuperPicky_v4.2.5_arm64_3c4955d.dmg"
-                            class="btn btn-primary" target="_blank">
-                            GitHub
-                        </a>
-                        <!-- 大陆镜像暂缓，等 GitCode 地址确认后更新 -->
-                    </div>
-                </div>
-
-                <!-- Mac Intel V4.2.5-RC11 暂无构建产物，等下个 RC 补充 -->
-                <!--
-                <div class="download-card">
-                    <div class="download-info">
-                        <div class="download-icon">
-                            <img src="img/icon.png" alt="SuperPicky">
-                        </div>
-                        <div class="download-meta">
-                            <h3>SuperPicky <span class="platform-badge">macOS</span> <span class="beta-badge">🆕 V4.2.5-RC11</span></h3>
-                            <p class="download-version">v4.2.5-RC11 · Intel x64 (2020年前 Mac)</p>
-                        </div>
-                    </div>
-                    <div class="download-links">
-                        <a href="#" class="btn btn-primary btn-tooltip"
-                            data-tooltip-cn="🖥 需要 macOS 12 Monterey 或更高版本"
-                            data-tooltip-en="🖥 Requires macOS 12 Monterey or later"
-                            target="_blank">
-                            GitHub
-                        </a>
-                    </div>
-                </div>
-                -->
-
-                <!-- Windows CPU V4.2.5-RC11 -->
-                <div class="download-card windows">
-                    <div class="download-info">
-                        <div class="download-icon">
-                            <img src="img/icon.png" alt="SuperPicky">
-                        </div>
-                        <div class="download-meta">
-                            <h3>SuperPicky <span class="platform-badge">Windows</span> <span class="beta-badge">🆕 V4.2.5-RC11</span></h3>
-                            <p class="download-version">v4.2.5-RC11 · CPU Only (No CUDA) · x64</p>
-                        </div>
-                    </div>
-                    <div class="download-links">
-                        <a href="https://github.com/jamesphotography/SuperPicky/releases/download/v4.2.5-RC11/SuperPicky_Setup_Win64_4.2.5_3c4955d.exe"
-                            class="btn btn-primary" target="_blank">
-                            GitHub
-                        </a>
-                        <!-- 大陆镜像暂缓，等 GitCode 地址确认后更新 -->
-                    </div>
-                </div>
-
-                <!-- Windows CUDA V4.2.5-RC11 -->
-                <div class="download-card windows">
-                    <div class="download-info">
-                        <div class="download-icon">
-                            <img src="img/icon.png" alt="SuperPicky">
-                        </div>
-                        <div class="download-meta">
-                            <h3>SuperPicky <span class="platform-badge">Windows</span> <span class="beta-badge">🆕 V4.2.5-RC11</span></h3>
-                            <p class="download-version">v4.2.5-RC11 · NVIDIA CUDA GPU Patch · x64</p>
-                        </div>
-                    </div>
-                    <div class="download-links">
-                        <a href="https://github.com/jamesphotography/SuperPicky/releases/download/v4.2.5-RC11/SuperPicky_CUDA_Patch_Win64_4.2.5_3c4955d.exe"
-                            class="btn btn-primary btn-tooltip"
-                            data-tooltip-cn="⚠️ 须先安装 CPU 版本" data-tooltip-en="⚠️ Install CPU version first"
-                            target="_blank">
-                            GitHub
-                        </a>
-                        <!-- 大陆镜像暂缓，等 GitCode 地址确认后更新 -->
-                    </div>
-                </div>
+            <div class="download-cards" id="beta-download-cards">
+                <!-- 由 JS 动态渲染 -->
             </div>
         </div>
     </section>
@@ -928,6 +845,91 @@
                 if (e.key === 'Escape') closeLightbox();
             });
         })();
+    </script>
+
+    <script>
+    // Beta 下载区块动态渲染
+    // 数据源：downloads_github.json（CI 自动更新）+ downloads_gitcode.json（手动维护）
+    (function () {
+        var GH_BASE = 'https://github.com/jamesphotography/SuperPicky/releases/download/';
+        var GC_BASE = 'https://gitcode.com/Jamesphotography/SuperPicky/releases/download/';
+
+        var PLATFORMS = [
+            { key: 'mac_arm64', labelCn: 'macOS · Apple Silicon (M1/M2/M3/M4/M5)', labelEn: 'macOS · Apple Silicon (M1/M2/M3/M4/M5)', badge: 'macOS',   cardClass: 'featured', tooltipCn: null, tooltipEn: null },
+            { key: 'win_cpu',   labelCn: 'Windows · CPU Only (No CUDA) · x64',      labelEn: 'Windows · CPU Only (No CUDA) · x64',      badge: 'Windows', cardClass: 'windows', tooltipCn: null, tooltipEn: null },
+            { key: 'win_cuda',  labelCn: 'Windows · NVIDIA CUDA GPU Patch · x64',   labelEn: 'Windows · NVIDIA CUDA GPU Patch · x64',   badge: 'Windows', cardClass: 'windows', tooltipCn: '⚠️ 须先安装 CPU 版本', tooltipEn: '⚠️ Install CPU version first' },
+        ];
+
+        function mkEl(tag, cls) { var e = document.createElement(tag); if (cls) e.className = cls; return e; }
+
+        function mkSpanLang(cn, en) {
+            var f = document.createDocumentFragment();
+            var sc = mkEl('span', 'lang-cn'); sc.textContent = cn; f.appendChild(sc);
+            var se = mkEl('span', 'lang-en'); se.textContent = en; f.appendChild(se);
+            return f;
+        }
+
+        function mkBtn(href, cls, tipCn, tipEn, lCn, lEn) {
+            var a = mkEl('a', 'btn ' + cls);
+            a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+            if (tipCn) { a.setAttribute('data-tooltip-cn', tipCn); a.setAttribute('data-tooltip-en', tipEn); }
+            a.appendChild(mkSpanLang(lCn, lEn));
+            return a;
+        }
+
+        function renderBetaCards(ghData, gcData) {
+            var tag = ghData.beta.tag;
+            var ghFiles = ghData.beta.files;
+            var gcFiles = (gcData && gcData.beta && gcData.beta.tag === tag) ? gcData.beta.files : {};
+
+            ['beta-section-tag-cn', 'beta-section-tag-en', 'hero-beta-tag-cn', 'hero-beta-tag-en'].forEach(function (id) {
+                var e = document.getElementById(id); if (e) e.textContent = tag;
+            });
+
+            var container = document.getElementById('beta-download-cards');
+            if (!container) return;
+            while (container.firstChild) container.removeChild(container.firstChild);
+
+            PLATFORMS.forEach(function (p) {
+                var ghFile = ghFiles[p.key];
+                if (!ghFile) return;
+
+                var ghUrl = GH_BASE + tag + '/' + ghFile;
+                var gcFile = gcFiles[p.key];
+                var gcUrl = gcFile ? GC_BASE + tag + '/' + gcFile : null;
+
+                var card = mkEl('div', 'download-card ' + (p.cardClass || ''));
+
+                var info = mkEl('div', 'download-info');
+                var icon = mkEl('div', 'download-icon');
+                var img = document.createElement('img'); img.src = 'img/icon.png'; img.alt = 'SuperPicky';
+                icon.appendChild(img);
+
+                var meta = mkEl('div', 'download-meta');
+                var h3 = document.createElement('h3');
+                h3.appendChild(document.createTextNode('SuperPicky '));
+                var pb = mkEl('span', 'platform-badge'); pb.textContent = p.badge; h3.appendChild(pb);
+                h3.appendChild(document.createTextNode(' '));
+                var bb = mkEl('span', 'beta-badge'); bb.textContent = '🆕 ' + tag; h3.appendChild(bb);
+                var ver = mkEl('p', 'download-version'); ver.appendChild(mkSpanLang(p.labelCn, p.labelEn));
+                meta.appendChild(h3); meta.appendChild(ver);
+                info.appendChild(icon); info.appendChild(meta);
+
+                var links = mkEl('div', 'download-links');
+                links.appendChild(mkBtn(ghUrl, gcUrl ? 'btn-secondary' : 'btn-primary', p.tooltipCn, p.tooltipEn, 'GitHub', 'GitHub'));
+                if (gcUrl) links.appendChild(mkBtn(gcUrl, 'btn-primary', p.tooltipCn, p.tooltipEn, '大陆镜像', 'GitCode'));
+
+                card.appendChild(info); card.appendChild(links);
+                container.appendChild(card);
+            });
+        }
+
+        Promise.all([
+            fetch('downloads_github.json?_=' + Date.now()).then(function (r) { return r.json(); }),
+            fetch('downloads_gitcode.json?_=' + Date.now()).then(function (r) { return r.json(); }).catch(function () { return null; }),
+        ]).then(function (res) { renderBetaCards(res[0], res[1]); })
+          .catch(function (err) { console.warn('Beta download data unavailable:', err); });
+    })();
     </script>
 </body>
 

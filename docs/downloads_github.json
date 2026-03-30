@@ -1,0 +1,11 @@
+{
+  "beta": {
+    "tag": "v4.2.5-RC11",
+    "updated_at": "2026-03-31T00:00:00Z",
+    "files": {
+      "mac_arm64": "SuperPicky_v4.2.5_arm64_3c4955d.dmg",
+      "win_cpu": "SuperPicky_Setup_Win64_4.2.5_3c4955d.exe",
+      "win_cuda": "SuperPicky_CUDA_Patch_Win64_4.2.5_3c4955d.exe"
+    }
+  }
+}
