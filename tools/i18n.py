@@ -234,6 +234,14 @@ def get_i18n(lang: str = None) -> I18n:
         I18n实例
     """
     registry = get_lazy_registry()
+    # 无参数调用时，优先复用主窗口已显式创建的语言实例，
+    # 避免 BirdID 等组件拿到不同 key 的 auto 实例导致语言不一致。
+    if lang is None:
+        for candidate_lang in ("zh_CN", "en_US", "zh_TW"):
+            candidate_key = f"i18n.instance::{candidate_lang}"
+            existing = registry.get(candidate_key)
+            if existing is not None:
+                return existing
     key = f"i18n.instance::{lang or 'auto'}"
     return registry.get_or_create(key, lambda: I18n(default_lang=lang))
 
