@@ -125,7 +125,7 @@ jobs:
             "birdid_server.py", "birdid_cli.py", "iqa_scorer.py",
             "post_adjustment_engine.py", "server_manager.py",
             "superpicky_cli.py", "topiq_model.py",
-            "tools", "core", "ui"
+            "tools", "core", "ui", "birdid"
           ) | Where-Object { Test-Path $_ }
           & "C:\Program Files\7-Zip\7z.exe" a -tzip $zipPath @items `
             -xr!"__pycache__" -xr!"*.pyc" -xr!"*.pyo" `
