@@ -38,9 +38,16 @@ class I18n:
             default_lang: 默认语言，如果为None则自动检测系统语言
         """
         if getattr(sys, 'frozen', False):
-            # PyInstaller packaged mode
+            # PyInstaller packaged mode: 基础 locales 来自冻结包
             base_dir = Path(sys._MEIPASS)
+            # 热补丁 locales 覆盖层：code_updates/locales/ 优先于冻结包
+            try:
+                from config import get_patch_dir
+                self._patch_locales_dir: Optional[Path] = get_patch_dir() / "locales"
+            except Exception:
+                self._patch_locales_dir = None
         else:
+            self._patch_locales_dir = None
             # Development mode: handle patch overlay (code_updates/) correctly
             candidate = Path(__file__).parent.parent
             if not (candidate / "locales").exists():
@@ -111,12 +118,11 @@ class I18n:
         return 'en_US'
 
     def _load_translations(self) -> None:
-        """加载当前语言的翻译"""
+        """加载当前语言的翻译，热补丁 locales 覆盖冻结包 locales"""
         locale_file = self.locales_dir / f"{self.current_lang}.json"
 
         if not locale_file.exists():
             _safe_print(f"警告: 语言包 {self.current_lang}.json 不存在，使用默认语言")
-            # 尝试加载fallback语言
             locale_file = self.locales_dir / f"{self.fallback_lang}.json"
             if not locale_file.exists():
                 _safe_print(f"错误: Fallback语言包 {self.fallback_lang}.json 也不存在")
@@ -130,6 +136,31 @@ class I18n:
         except Exception as e:
             _safe_print(f"❌ 加载语言包失败: {e}")
             self.translations = {}
+
+        # 热补丁 locales 覆盖层（仅 frozen 模式）
+        patch_dir = getattr(self, '_patch_locales_dir', None)
+        if patch_dir:
+            patch_file = patch_dir / f"{self.current_lang}.json"
+            if not patch_file.exists():
+                patch_file = patch_dir / f"{self.fallback_lang}.json"
+            if patch_file.exists():
+                try:
+                    import copy
+                    with open(patch_file, 'r', encoding='utf-8') as f:
+                        patch_data = json.load(f)
+                    # 深度合并：patch 的 key 覆盖基础翻译，基础翻译作为兜底
+                    def _deep_merge(base: dict, overlay: dict) -> dict:
+                        result = copy.deepcopy(base)
+                        for k, v in overlay.items():
+                            if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+                                result[k] = _deep_merge(result[k], v)
+                            else:
+                                result[k] = v
+                        return result
+                    self.translations = _deep_merge(self.translations, patch_data)
+                    _safe_print(f"✅ Patch locale overlay applied: {patch_file.name}")
+                except Exception as e:
+                    _safe_print(f"⚠️ 补丁语言包覆盖失败: {e}")
 
     def t(self, key: str, **params) -> str:
         """
@@ -223,6 +254,14 @@ class I18n:
         return languages
 
 
+def set_primary_language(lang: str) -> None:
+    """
+    设置 UI 主语言。主窗口初始化时调用，确保所有 get_i18n() 无参调用
+    都返回与 UI 相同语言的实例，与创建顺序无关。
+    """
+    get_lazy_registry().set('_primary_lang', lang)
+
+
 def get_i18n(lang: str = None) -> I18n:
     """
     获取国际化实例（单例模式）
@@ -234,9 +273,15 @@ def get_i18n(lang: str = None) -> I18n:
         I18n实例
     """
     registry = get_lazy_registry()
-    # 无参数调用时，优先复用主窗口已显式创建的语言实例，
-    # 避免 BirdID 等组件拿到不同 key 的 auto 实例导致语言不一致。
     if lang is None:
+        # 1. 优先返回主窗口显式声明的语言实例（最可靠）
+        primary = registry.get('_primary_lang')
+        if primary:
+            key = f"i18n.instance::{primary}"
+            existing = registry.get(key)
+            if existing is not None:
+                return existing
+        # 2. 兜底：查找任意已存在的显式语言实例
         for candidate_lang in ("zh_CN", "en_US", "zh_TW"):
             candidate_key = f"i18n.instance::{candidate_lang}"
             existing = registry.get(candidate_key)

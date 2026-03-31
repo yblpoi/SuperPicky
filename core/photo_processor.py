@@ -1172,10 +1172,14 @@ class PhotoProcessor:
                         })
             else:
                 # 低置信度：记日志，并将候选鸟名存入 file_bird_species 供 caption 使用
-                self._log(
-                    f"  \U0001f426 Low confidence [{source_display}]: {top_result.get('cn_name', '?')} "
-                    f"({birdid_confidence:.0f}% < {self.settings.birdid_confidence_threshold}%)"
-                )
+                low_conf_name = (en_name or cn_name) if self.i18n.current_lang.startswith('en') else (cn_name or en_name)
+                self._log(self.i18n.t(
+                    "logs.birdid_low_confidence",
+                    source=source_display,
+                    name=low_conf_name or '?',
+                    confidence=birdid_confidence,
+                    threshold=self.settings.birdid_confidence_threshold,
+                ))
                 if cn_name:
                     self.file_bird_species[file_prefix] = {
                         'cn_name': cn_name,
@@ -1588,10 +1592,10 @@ class PhotoProcessor:
                 try:
                     if _use_mps:
                         _torch_module.mps.empty_cache()
-                        self._log(f"  🧹 [第{i}张] MPS 显存已清理", "info")
+                        self._log(self.i18n.t("logs.mps_cache_cleared", index=i), "info")
                     elif _use_cuda:
                         _torch_module.cuda.empty_cache()
-                        self._log(f"  🧹 [第{i}张] CUDA 显存已清理", "info")
+                        self._log(self.i18n.t("logs.cuda_cache_cleared", index=i), "info")
                     else:
                         self._log(f"  🧹 [第{i}张] GC 已执行", "info")
                     _gc_module.collect()
@@ -2374,7 +2378,7 @@ class PhotoProcessor:
         
         # 回收 BirdID 异步任务：补写标题并更新鸟种映射（用于后续分类目录）
         if birdid_tasks:
-            self._log(f"⏳ 正在等待剩余 BirdID 识别结果 ({len(birdid_tasks)} 个任务)...")
+            self._log(self.i18n.t("logs.birdid_waiting", count=len(birdid_tasks)))
         collect_birdid_tasks(wait=True)
         
         if birdid_executor is not None:

@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QPropertyAnimation, QEasingCurve, QMimeData, QThread
 from PySide6.QtGui import QFont, QPixmap, QIcon, QAction, QTextCursor, QColor, QDragEnterEvent, QDropEvent
 
-from tools.i18n import get_i18n
+from tools.i18n import get_i18n, set_primary_language
 from advanced_config import get_advanced_config
 from config import config as app_config
 from ui.styles import (
@@ -624,6 +624,7 @@ class SuperPickyMainWindow(QMainWindow):
         # 初始化配置和国际化
         self.config = get_advanced_config()
         self.i18n = get_i18n(self.config.language)
+        set_primary_language(self.config.language)  # 让所有 get_i18n() 无参调用返回同一语言
 
         # 状态变量
         self.directory_path = ""
@@ -2883,9 +2884,18 @@ class SuperPickyMainWindow(QMainWindow):
 
         cfg = _get_cfg()
 
+        # 读取实际渠道（优先 build_info.RELEASE_CHANNEL）
+        try:
+            from core.build_info import RELEASE_CHANNEL as _rc
+            channel = _rc if _rc in ('nightly', 'official') else get_version_channel(APP_VERSION)
+        except Exception:
+            channel = get_version_channel(APP_VERSION)
+
+        local_meta = read_local_meta()
+
         dialog = QDialog(self)
         dialog.setWindowTitle(self.i18n.t("update.update_center_title"))
-        dialog.setMinimumWidth(440)
+        dialog.setMinimumWidth(420)
         dialog.setStyleSheet(f"""
             QDialog {{ background-color: {COLORS['bg_primary']}; }}
             QLabel  {{ color: {COLORS['text_primary']}; font-size: 13px; }}
@@ -2920,23 +2930,18 @@ class SuperPickyMainWindow(QMainWindow):
             info_layout.addLayout(row)
             return val
 
-        _row(self.i18n.t("update.current_version_label"), f"V{APP_VERSION}")
+        # 版本：合并 base + patch 显示，普通用户一眼看懂
+        patch_version = local_meta.get('patch_version', '') if local_meta else ''
+        if patch_version:
+            version_display = f"V{APP_VERSION}  +  {patch_version}"
+            version_color = COLORS['accent']
+        else:
+            version_display = f"V{APP_VERSION}"
+            version_color = COLORS['text_primary']
+        patch_val_ref = [None]  # 用列表传引用，供 _check 回调更新
+        _row(self.i18n.t("update.current_version_label"), version_display, version_color)
 
-        channel = get_version_channel(APP_VERSION)
-        channel_label_map = {
-            'official': self.i18n.t("update.update_center_channel_official"),
-            'nightly':  self.i18n.t("update.update_center_channel_nightly"),
-            'dev':      self.i18n.t("update.update_center_channel_dev"),
-        }
-        _row(self.i18n.t("update.update_center_channel_label"), channel_label_map.get(channel, channel))
-
-        local_meta = read_local_meta()
-        patch_text = local_meta.get('patch_version', self.i18n.t("update.update_center_patch_none")) \
-            if local_meta else self.i18n.t("update.update_center_patch_none")
-        patch_color = COLORS['accent'] if local_meta else COLORS['text_secondary']
-        patch_val = _row(self.i18n.t("update.update_center_patch_label"), patch_text, patch_color)
-
-        # 結果行（動態更新）
+        # 检查结果行（动态更新，打开时默认提示点检查）
         result_val = _row(
             self.i18n.t("update.update_center_result_label"),
             self.i18n.t("update.update_center_result_pending"),
@@ -2962,13 +2967,15 @@ class SuperPickyMainWindow(QMainWindow):
         auto_cb.toggled.connect(_on_auto)
         settings_layout.addWidget(auto_cb)
 
-        prerelease_cb = QCheckBox(self.i18n.t("update.update_center_include_prerelease"))
-        prerelease_cb.setStyleSheet(cb_style)
-        prerelease_cb.setChecked(cfg.include_prerelease)
-        def _on_prerelease(checked):
-            _c = _get_cfg(); _c.set_include_prerelease(checked); _c.save()
-        prerelease_cb.toggled.connect(_on_prerelease)
-        settings_layout.addWidget(prerelease_cb)
+        # 「接收 RC 测试版」只对正式版用户显示（RC 用户天然收到 RC 更新，无需此选项）
+        if channel == 'official':
+            prerelease_cb = QCheckBox(self.i18n.t("update.update_center_include_prerelease"))
+            prerelease_cb.setStyleSheet(cb_style)
+            prerelease_cb.setChecked(cfg.include_prerelease)
+            def _on_prerelease(checked):
+                _c = _get_cfg(); _c.set_include_prerelease(checked); _c.save()
+            prerelease_cb.toggled.connect(_on_prerelease)
+            settings_layout.addWidget(prerelease_cb)
 
         layout.addWidget(settings_frame)
 
@@ -3005,6 +3012,7 @@ class SuperPickyMainWindow(QMainWindow):
             result_val.setText(self.i18n.t("update.update_center_checking"))
 
             import threading
+            from PySide6.QtCore import QTimer
             def _check():
                 try:
                     from tools.update_checker import UpdateChecker
@@ -3017,11 +3025,6 @@ class SuperPickyMainWindow(QMainWindow):
                         text  = f"{self.i18n.t('update.update_center_result_has_update')} V{info.get('version','')}"
                         color = COLORS['accent']
                     elif info.get('patch_applied'):
-                        # 刷新補丁狀態顯示
-                        meta = read_local_meta()
-                        pv = meta.get('patch_version', '') if meta else ''
-                        patch_val.setText(pv)
-                        patch_val.setStyleSheet(f"color: {COLORS['accent']}; font-size: 13px; font-weight: 500;")
                         text  = self.i18n.t("update.update_center_result_patch_applied")
                         color = COLORS['accent']
                     elif info.get('error'):
@@ -3030,19 +3033,21 @@ class SuperPickyMainWindow(QMainWindow):
                     else:
                         text  = self.i18n.t("update.update_center_result_latest")
                         color = COLORS['success']
+                except Exception as e:
+                    text  = self.i18n.t("update.update_center_result_failed")
+                    color = COLORS['warning']
+                    has_update = False
+                    info = {}
 
-                    from PySide6.QtCore import QMetaObject, Qt
-                    def _update_ui():
-                        result_val.setText(text)
-                        result_val.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 500;")
-                        check_btn.setEnabled(True)
-                        check_btn.setText(self.i18n.t("update.update_center_btn_check"))
-                        if has_update and info.get('download_url'):
-                            import webbrowser
-                            webbrowser.open(info['download_url'])
-                    QMetaObject.invokeMethod(check_btn, lambda: _update_ui(), Qt.QueuedConnection)
-                except Exception:
-                    pass
+                def _update_ui():
+                    result_val.setText(text)
+                    result_val.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 500;")
+                    check_btn.setEnabled(True)
+                    check_btn.setText(self.i18n.t("update.update_center_btn_check"))
+                    if has_update and info.get('download_url'):
+                        import webbrowser
+                        webbrowser.open(info['download_url'])
+                QTimer.singleShot(0, _update_ui)
             threading.Thread(target=_check, daemon=True).start()
 
         check_btn.clicked.connect(_do_check)
@@ -3054,8 +3059,6 @@ class SuperPickyMainWindow(QMainWindow):
             clear_btn.setStyleSheet(btn_style_secondary)
             def _do_clear():
                 clear_patch()
-                patch_val.setText(self.i18n.t("update.update_center_patch_none"))
-                patch_val.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px; font-weight: 500;")
                 clear_btn.setVisible(False)
             clear_btn.clicked.connect(_do_clear)
             btn_row.addWidget(clear_btn)

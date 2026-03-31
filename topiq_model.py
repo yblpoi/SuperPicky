@@ -479,10 +479,17 @@ def get_topiq_weight_path():
     
     if hasattr(sys, '_MEIPASS'):
         search_paths.append(os.path.join(sys._MEIPASS, 'models', weight_name))
-    
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     search_paths.append(os.path.join(base_dir, 'models', weight_name))
     search_paths.append(os.path.join(base_dir, weight_name))
+
+    # 热补丁场景：__file__ 指向 code_updates/，需额外搜索 app 资源目录
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    search_paths.append(os.path.join(exe_dir, 'models', weight_name))
+    # macOS .app bundle: Contents/Resources/models/
+    resources_dir = os.path.join(exe_dir, '..', 'Resources', 'models', weight_name)
+    search_paths.append(os.path.normpath(resources_dir))
     
     for path in search_paths:
         if os.path.exists(path):
