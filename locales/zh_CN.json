@@ -422,6 +422,7 @@
     "yolo_loaded": "✅ YOLO检测模型已加载",
     "keypoint_loaded": "✅ 关键点模型已加载",
     "flight_loaded": "✅ 飞版检测模型已加载",
+    "iqa_loading": "🎨 美学评分器初始化中... (设备: {device})",
     "iqa_loaded": "✅ 美学评分模型已加载",
     "birdid_loaded": "✅ 识鸟模型已加载",
     "preload_complete": "🎉 所有模型预加载完成！",

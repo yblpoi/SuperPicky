@@ -422,6 +422,7 @@
     "yolo_loaded": "✅ YOLO detection model loaded",
     "keypoint_loaded": "✅ Keypoint model loaded",
     "flight_loaded": "✅ Flight detection model loaded",
+    "iqa_loading": "🎨 Initializing aesthetic scorer... (device: {device})",
     "iqa_loaded": "✅ Aesthetic scoring model loaded",
     "birdid_loaded": "✅ Bird ID model loaded",
     "preload_complete": "🎉 All models preloaded!",

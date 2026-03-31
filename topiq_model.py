@@ -484,10 +484,16 @@ def get_topiq_weight_path():
     search_paths.append(os.path.join(base_dir, 'models', weight_name))
     search_paths.append(os.path.join(base_dir, weight_name))
 
-    # 热补丁场景：__file__ 指向 code_updates/，需额外搜索 app 资源目录
+    # 热补丁/开发overlay场景：__file__ 指向 code_updates/，遍历 sys.path 找项目根
+    for p in sys.path:
+        if p and os.path.isdir(p):
+            candidate = os.path.join(p, 'models', weight_name)
+            if candidate not in search_paths:
+                search_paths.append(candidate)
+
+    # 热补丁冻结场景：exe 目录 / macOS .app bundle Resources/
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
     search_paths.append(os.path.join(exe_dir, 'models', weight_name))
-    # macOS .app bundle: Contents/Resources/models/
     resources_dir = os.path.join(exe_dir, '..', 'Resources', 'models', weight_name)
     search_paths.append(os.path.normpath(resources_dir))
     

@@ -2824,8 +2824,10 @@ class SuperPickyMainWindow(QMainWindow):
             try:
                 from config import get_best_device
                 from iqa_scorer import get_iqa_scorer
-                get_iqa_scorer(device=get_best_device().type)
-                self.log_signal.emit(self.i18n.t("preload.iqa_loaded", fallback="✅ 美学评分模型已加载"), "success")
+                device = get_best_device()
+                self.log_signal.emit(self.i18n.t("preload.iqa_loading", device=device.type), "info")
+                get_iqa_scorer(device=device.type)
+                self.log_signal.emit(self.i18n.t("preload.iqa_loaded"), "success")
                 results.append(("IQA", True, None))
             except Exception as e:
                 self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"IQA: {e}"), "warning")
