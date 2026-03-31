@@ -114,7 +114,6 @@ jobs:
 
           # 7-Zip 在 windows-latest runner 上内置
           # 包含所有运行时 Python 文件；排除：
-          #   build_info*.py     — 构建元数据（COMMIT_HASH/RELEASE_CHANNEL），由安装包注入，不应被覆盖
           #   main.py            — PyInstaller 入口，patch 后不会生效
           #   build_release_win.py — 仅构建用，不需随 patch 分发
           #   _telemetry_build.py  — 构建时临时覆盖文件
@@ -129,7 +128,7 @@ jobs:
           ) | Where-Object { Test-Path $_ }
           & "C:\Program Files\7-Zip\7z.exe" a -tzip $zipPath @items `
             -xr!"__pycache__" -xr!"*.pyc" -xr!"*.pyo" `
-            -xr!"build_info*.py" -xr!"main.py" | Out-Null
+            -xr!"main.py" | Out-Null
 
           $meta = @{
             patch_version = $patchVersion
@@ -421,8 +420,9 @@ jobs:
           ZIP_NAME="code_patch_${PATCH_VERSION}.zip"
 
           # 与 Windows CI 保持一致：包含所有运行时 Python 文件
-          # 排除 build_info*.py（构建元数据，不应被 patch 覆盖）
           # 排除 main.py（PyInstaller 入口，patch 无效）
+          # build_info.py 必须包含：CI 已注入 RELEASE_CHANNEL，patch 覆盖后不影响正确性
+          # 若排除则 code_updates/core/ 遮蔽冻结包导致 ModuleNotFoundError
           PATCH_ITEMS=(
             constants.py advanced_config.py ai_model.py
             birdid_server.py birdid_cli.py iqa_scorer.py
@@ -436,8 +436,7 @@ jobs:
           done
 
           zip -r "dist/${ZIP_NAME}" "${EXISTING_ITEMS[@]}" \
-            --exclude "**/__pycache__/*" --exclude "**/*.pyc" --exclude "**/*.pyo" \
-            --exclude "**/build_info*.py"
+            --exclude "**/__pycache__/*" --exclude "**/*.pyc" --exclude "**/*.pyo"
 
           APPLIED_AT=$(python3 -c "import datetime; print(datetime.datetime.now(datetime.timezone.utc).isoformat())")
           printf '{"patch_version":"%s","base_version":"%s","applied_at":"%s"}\n' \
