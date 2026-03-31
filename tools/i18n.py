@@ -259,7 +259,7 @@ def set_primary_language(lang: str) -> None:
     设置 UI 主语言。主窗口初始化时调用，确保所有 get_i18n() 无参调用
     都返回与 UI 相同语言的实例，与创建顺序无关。
     """
-    get_lazy_registry()['_primary_lang'] = lang
+    get_lazy_registry().set('_primary_lang', lang)
 
 
 def get_i18n(lang: str = None) -> I18n:
