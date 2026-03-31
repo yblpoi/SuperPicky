@@ -1118,7 +1118,11 @@ class PhotoProcessor:
             birdid_result: Dict,
             source_filename: Optional[str] = None
         ):
-            if not birdid_result or not birdid_result.get('success') or not birdid_result.get('results'):
+            if not birdid_result:
+                return
+            if birdid_result.get('error'):
+                self._log(f"  ⚠️ BirdID error [{source_filename or file_prefix}]: {birdid_result['error']}", "warning")
+            if not birdid_result.get('success') or not birdid_result.get('results'):
                 return
             source_display = source_filename or file_prefix or "?"
             top_result = birdid_result['results'][0]

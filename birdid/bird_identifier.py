@@ -44,8 +44,28 @@ except ImportError:
 
 # birdid 模块目录
 BIRDID_DIR = os.path.dirname(os.path.abspath(__file__))
-# 项目根目录
-PROJECT_ROOT = os.path.dirname(BIRDID_DIR)
+# 项目根目录（code_updates overlay 场景下 __file__ 指向 code_updates/birdid/，需通过 sys.path 找真实根）
+def _find_project_root() -> str:
+    candidate = os.path.dirname(BIRDID_DIR)
+    if os.path.exists(os.path.join(candidate, 'models', 'model20240824.pth')):
+        return candidate
+    for p in sys.path:
+        if p and os.path.isdir(p) and os.path.exists(os.path.join(p, 'models', 'model20240824.pth')):
+            return p
+    return candidate  # 兜底
+
+def _find_birdid_dir() -> str:
+    if os.path.exists(os.path.join(BIRDID_DIR, 'data', 'bird_reference.sqlite')):
+        return BIRDID_DIR
+    for p in sys.path:
+        if p and os.path.isdir(p):
+            candidate = os.path.join(p, 'birdid')
+            if os.path.exists(os.path.join(candidate, 'data', 'bird_reference.sqlite')):
+                return candidate
+    return BIRDID_DIR  # 兜底
+
+PROJECT_ROOT = _find_project_root()
+BIRDID_DIR = _find_birdid_dir()
 
 
 def get_birdid_path(relative_path: str) -> str:
@@ -169,7 +189,8 @@ def get_classifier():
         else:
             raise RuntimeError(f"未找到分类模型: {MODEL_PATH} 或 {MODEL_PATH_LEGACY}")
 
-        model.eval()
+        model = model.to(CLASSIFIER_DEVICE)
+        model.eval()  # noqa: model.eval() is a PyTorch API call, not Python eval()
         print(_t("logs.birdid_fallback_model"))
         return model
 
