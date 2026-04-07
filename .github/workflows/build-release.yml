@@ -151,61 +151,56 @@ jobs:
           files: |
             release_assets/*
 
-      - name: Create GitCode Release
-        continue-on-error: true
-        shell: pwsh
-        env:
-          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          $baseUrl = "https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
-          $tag = $env:TAG
-          $headers = @{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" }
+      # - name: Create GitCode Release
+      #   continue-on-error: true
+      #   shell: pwsh
+      #   env:
+      #     GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      #     TAG: ${{ steps.release_meta.outputs.tag }}
+      #   run: |
+      #     $baseUrl = "https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
+      #     $tag = $env:TAG
+      #     $headers = @{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" }
+      #     $body = @{ tag_name = $tag; name = "SuperPicky $tag"; description = "See GitHub release for details." } | ConvertTo-Json
+      #     try {
+      #       Invoke-RestMethod -Uri "$baseUrl/releases" -Method Post -Body $body -Headers $headers -ErrorAction Stop
+      #     } catch {
+      #       Write-Host "Release already exists or creation failed, continuing..."
+      #     }
 
-          # 尝试创建 GitCode Release（Mac job 可能已抢先创建，忽略冲突）
-          $body = @{ tag_name = $tag; name = "SuperPicky $tag"; description = "See GitHub release for details." } | ConvertTo-Json
-          try {
-            Invoke-RestMethod -Uri "$baseUrl/releases" -Method Post -Body $body -Headers $headers -ErrorAction Stop
-          } catch {
-            Write-Host "Release already exists or creation failed, continuing..."
-          }
-
-      - name: Update downloads_github.json and push
-        shell: pwsh
-        env:
-          TAG: ${{ steps.release_meta.outputs.tag }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REF: ${{ github.ref_name }}
-        run: |
-          $tag = $env:TAG
-          # 从 GitHub Release 资产列表中提取各平台文件名
-          $assets = gh release view $tag --json assets --jq '.assets[].name' 2>$null
-          $macArm64 = ($assets | Where-Object { $_ -match '(?i)arm64.*\.dmg$' } | Select-Object -First 1)
-          $winCpu   = ($assets | Where-Object { $_ -match '(?i)Setup.*Win.*\.exe$' } | Select-Object -First 1)
-          $winCuda  = ($assets | Where-Object { $_ -match '(?i)CUDA.*Win.*\.exe$' } | Select-Object -First 1)
-
-          $json = [ordered]@{
-            beta = [ordered]@{
-              tag        = $tag
-              updated_at = (Get-Date -Format "o")
-              files      = [ordered]@{
-                mac_arm64 = if ($macArm64) { $macArm64 } else { $null }
-                win_cpu   = if ($winCpu)   { $winCpu }   else { $null }
-                win_cuda  = if ($winCuda)  { $winCuda }  else { $null }
-              }
-            }
-          }
-          # 保存 JSON 内容，切换到 nightly 分支后写入并推送
-          $jsonContent = $json | ConvertTo-Json -Depth 5
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin nightly
-          git checkout -B nightly origin/nightly
-          $jsonContent | Out-File -Encoding utf8NoBOM "docs/downloads_github.json"
-          git add docs/downloads_github.json
-          git diff --cached --quiet && exit 0
-          git commit -m "chore(web): 自动更新 downloads_github.json → $tag [skip ci]"
-          git push origin HEAD:nightly
+      # - name: Update downloads_github.json and push
+      #   shell: pwsh
+      #   env:
+      #     TAG: ${{ steps.release_meta.outputs.tag }}
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     REF: ${{ github.ref_name }}
+      #   run: |
+      #     $tag = $env:TAG
+      #     $assets = gh release view $tag --json assets --jq '.assets[].name' 2>$null
+      #     $macArm64 = ($assets | Where-Object { $_ -match '(?i)arm64.*\.dmg$' } | Select-Object -First 1)
+      #     $winCpu   = ($assets | Where-Object { $_ -match '(?i)Setup.*Win.*\.exe$' } | Select-Object -First 1)
+      #     $winCuda  = ($assets | Where-Object { $_ -match '(?i)CUDA.*Win.*\.exe$' } | Select-Object -First 1)
+      #     $json = [ordered]@{
+      #       beta = [ordered]@{
+      #         tag        = $tag
+      #         updated_at = (Get-Date -Format "o")
+      #         files      = [ordered]@{
+      #           mac_arm64 = if ($macArm64) { $macArm64 } else { $null }
+      #           win_cpu   = if ($winCpu)   { $winCpu }   else { $null }
+      #           win_cuda  = if ($winCuda)  { $winCuda }  else { $null }
+      #         }
+      #       }
+      #     }
+      #     $jsonContent = $json | ConvertTo-Json -Depth 5
+      #     git config user.name "github-actions[bot]"
+      #     git config user.email "github-actions[bot]@users.noreply.github.com"
+      #     git fetch origin nightly
+      #     git checkout -B nightly origin/nightly
+      #     $jsonContent | Out-File -Encoding utf8NoBOM "docs/downloads_github.json"
+      #     git add docs/downloads_github.json
+      #     git diff --cached --quiet && exit 0
+      #     git commit -m "chore(web): 自动更新 downloads_github.json → $tag [skip ci]"
+      #     git push origin HEAD:nightly
 
   build-mac:
     runs-on: macos-14
@@ -445,40 +440,32 @@ jobs:
           echo "PATCH_ZIP=dist/${ZIP_NAME}" >> "$GITHUB_ENV"
           echo "PATCH_META=dist/patch_meta.json" >> "$GITHUB_ENV"
 
-      - name: Push patch files to mirror server
-        continue-on-error: true
-        env:
-          MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$MIRROR_SSH_KEY" > ~/.ssh/mirror_key
-          chmod 600 ~/.ssh/mirror_key
-
-          VERSION=$(python3 -c "from constants import APP_VERSION; print(APP_VERSION)")
-          PATCH_VERSION="${TAG}"
-          MIRROR_BASE="http://1.119.150.179:59080/superpicky"
-
-          # 生成 latest.json（供中国大陆用户版本查询 fallback）
-          python3 -c "import json,datetime,sys; d={'tag_name':sys.argv[1],'version':sys.argv[2],'published_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'patch_meta_url':sys.argv[3]+'/patch_meta.json','patch_zip_url':sys.argv[3]+'/code_patch_'+sys.argv[4]+'.zip'}; json.dump(d,open('dist/latest.json','w'),indent=2)" "$TAG" "$VERSION" "$MIRROR_BASE" "$PATCH_VERSION"
-
-          # 建立远端目录
-          ssh -i ~/.ssh/mirror_key -p 22 \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            jordan@1.119.150.179 \
-            "mkdir -p /opt/1panel/www/sites/github/index/superpicky"
-
-          # 推送 latest.json、patch_meta.json、code_patch zip
-          scp -i ~/.ssh/mirror_key -P 22 \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            dist/latest.json \
-            "${PATCH_META}" \
-            "${PATCH_ZIP}" \
-            jordan@1.119.150.179:/opt/1panel/www/sites/github/index/superpicky/
-
-          rm -f ~/.ssh/mirror_key
+      # - name: Push patch files to mirror server
+      #   continue-on-error: true
+      #   env:
+      #     MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
+      #     TAG: ${{ steps.release_meta.outputs.tag }}
+      #   run: |
+      #     mkdir -p ~/.ssh
+      #     echo "$MIRROR_SSH_KEY" > ~/.ssh/mirror_key
+      #     chmod 600 ~/.ssh/mirror_key
+      #     VERSION=$(python3 -c "from constants import APP_VERSION; print(APP_VERSION)")
+      #     PATCH_VERSION="${TAG}"
+      #     MIRROR_BASE="http://1.119.150.179:59080/superpicky"
+      #     python3 -c "import json,datetime,sys; d={'tag_name':sys.argv[1],'version':sys.argv[2],'published_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'patch_meta_url':sys.argv[3]+'/patch_meta.json','patch_zip_url':sys.argv[3]+'/code_patch_'+sys.argv[4]+'.zip'}; json.dump(d,open('dist/latest.json','w'),indent=2)" "$TAG" "$VERSION" "$MIRROR_BASE" "$PATCH_VERSION"
+      #     ssh -i ~/.ssh/mirror_key -p 22 \
+      #       -o StrictHostKeyChecking=no \
+      #       -o ConnectTimeout=10 \
+      #       jordan@1.119.150.179 \
+      #       "mkdir -p /opt/1panel/www/sites/github/index/superpicky"
+      #     scp -i ~/.ssh/mirror_key -P 22 \
+      #       -o StrictHostKeyChecking=no \
+      #       -o ConnectTimeout=10 \
+      #       dist/latest.json \
+      #       "${PATCH_META}" \
+      #       "${PATCH_ZIP}" \
+      #       jordan@1.119.150.179:/opt/1panel/www/sites/github/index/superpicky/
+      #     rm -f ~/.ssh/mirror_key
 
       - name: Clean up
         if: always()
@@ -497,50 +484,42 @@ jobs:
             ${{ env.PATCH_ZIP }}
             ${{ env.PATCH_META }}
 
-      - name: Upload patch files to GitCode
-        continue-on-error: true
-        env:
-          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          BASE_URL="https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
-          FILE_BASE="https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release"
-          PATCH_ZIP_NAME=$(basename "${PATCH_ZIP}")
-
-          # 上传三个小文件到 GitCode generic packages（不上传大 DMG，避免 413）
-          for FILE in dist/latest.json "${PATCH_META}" "${PATCH_ZIP}"; do
-            FILENAME=$(basename "$FILE")
-            curl -s --fail -T "$FILE" \
-              --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-              "$BASE_URL/packages/generic/release/$TAG/$FILENAME" || true
-          done
-
-          # 尝试在 GitCode 创建 Release（Windows job 可能已抢先创建，忽略冲突）
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"tag_name\":\"$TAG\",\"name\":\"SuperPicky $TAG\",\"description\":\"See GitHub release for details.\"}" \
-            "$BASE_URL/releases" || true
-
-          # 添加补丁文件 asset links 到 GitCode Release
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"name\":\"patch_meta.json\",\"url\":\"$FILE_BASE/$TAG/patch_meta.json\",\"link_type\":\"package\"}" \
-            "$BASE_URL/releases/$TAG/assets/links" || true
-
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"name\":\"$PATCH_ZIP_NAME\",\"url\":\"$FILE_BASE/$TAG/$PATCH_ZIP_NAME\",\"link_type\":\"package\"}" \
-            "$BASE_URL/releases/$TAG/assets/links" || true
-
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"name\":\"latest.json\",\"url\":\"$FILE_BASE/$TAG/latest.json\",\"link_type\":\"package\"}" \
-            "$BASE_URL/releases/$TAG/assets/links" || true
+      # - name: Upload patch files to GitCode
+      #   continue-on-error: true
+      #   env:
+      #     GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      #     TAG: ${{ steps.release_meta.outputs.tag }}
+      #   run: |
+      #     BASE_URL="https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
+      #     FILE_BASE="https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release"
+      #     PATCH_ZIP_NAME=$(basename "${PATCH_ZIP}")
+      #     for FILE in dist/latest.json "${PATCH_META}" "${PATCH_ZIP}"; do
+      #       FILENAME=$(basename "$FILE")
+      #       curl -s --fail -T "$FILE" \
+      #         --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+      #         "$BASE_URL/packages/generic/release/$TAG/$FILENAME" || true
+      #     done
+      #     curl -s \
+      #       --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+      #       --header "Content-Type: application/json" \
+      #       --request POST \
+      #       --data "{\"tag_name\":\"$TAG\",\"name\":\"SuperPicky $TAG\",\"description\":\"See GitHub release for details.\"}" \
+      #       "$BASE_URL/releases" || true
+      #     curl -s \
+      #       --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+      #       --header "Content-Type: application/json" \
+      #       --request POST \
+      #       --data "{\"name\":\"patch_meta.json\",\"url\":\"$FILE_BASE/$TAG/patch_meta.json\",\"link_type\":\"package\"}" \
+      #       "$BASE_URL/releases/$TAG/assets/links" || true
+      #     curl -s \
+      #       --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+      #       --header "Content-Type: application/json" \
+      #       --request POST \
+      #       --data "{\"name\":\"$PATCH_ZIP_NAME\",\"url\":\"$FILE_BASE/$TAG/$PATCH_ZIP_NAME\",\"link_type\":\"package\"}" \
+      #       "$BASE_URL/releases/$TAG/assets/links" || true
+      #     curl -s \
+      #       --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+      #       --header "Content-Type: application/json" \
+      #       --request POST \
+      #       --data "{\"name\":\"latest.json\",\"url\":\"$FILE_BASE/$TAG/latest.json\",\"link_type\":\"package\"}" \
+      #       "$BASE_URL/releases/$TAG/assets/links" || true
