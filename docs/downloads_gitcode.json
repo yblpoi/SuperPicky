@@ -1,6 +1,6 @@
 {
   "beta": {
-    "tag": "v4.2.5-RC14",
+    "tag": "v4.2.5",
     "files": {
       "mac_arm64": "SuperPicky_v4.2.5_arm64_5e68551.dmg",
       "win_cpu": "SuperPicky_Setup_Win64_4.2.5_5e68551.exe",
