@@ -45,18 +45,6 @@ def is_excluded(dirname: str) -> bool:
     return False
 
 
-def _is_nonempty_photo_file(entry: os.DirEntry[str]) -> bool:
-    """判断目录项是否为非空照片文件。"""
-    ext = os.path.splitext(entry.name)[1].lower()
-    if ext not in _PHOTO_EXTENSIONS:
-        return False
-
-    try:
-        return entry.stat(follow_symlinks=False).st_size > 0
-    except OSError:
-        return False
-
-
 def _scan_directory_once(dir_path: str) -> Tuple[int, List[str]]:
     """单次扫描目录，返回直接照片数量与可继续扫描的子目录。"""
     photo_count = 0
@@ -66,7 +54,8 @@ def _scan_directory_once(dir_path: str) -> Tuple[int, List[str]]:
         with os.scandir(dir_path) as entries:
             for entry in entries:
                 if entry.is_file(follow_symlinks=False):
-                    if _is_nonempty_photo_file(entry):
+                    ext = os.path.splitext(entry.name)[1].lower()
+                    if ext in _PHOTO_EXTENSIONS:
                         photo_count += 1
                     continue
 
@@ -148,9 +137,21 @@ def is_dangerous_root(
     root_path = PurePosixPath(normalized)
     root_parts = tuple(root_path.parts)
 
+    # 严格相等判断：仅当路径恰好是文件系统根目录时才阻断。
+    # 不能将 "/" 放入 protected_paths 用 _is_subpath() 做前缀匹配，
+    # 因为所有绝对路径的第一个 part 均为 "/"，会导致误判一切目录。
+    # Strict equality check: only block when the path is exactly the filesystem root.
+    # Do NOT put "/" into protected_paths for _is_subpath() prefix matching,
+    # because every absolute path starts with "/" as its first part,
+    # which would cause all directories to be falsely flagged.
     if normalized == "/":
         return True, "文件系统根目录 / Filesystem root"
 
+    # 对受保护路径同样执行 realpath 解析，以处理符号链接。
+    # 例如 macOS 上 /etc -> /private/etc，/var -> /private/var，
+    # 若不解析则与已 realpath 处理的 normalized 无法匹配。
+    # Resolve protected paths with realpath too, to handle symlinks.
+    # e.g. on macOS: /etc -> /private/etc, /var -> /private/var.
     _raw_protected = [
         "/usr",
         "/etc",

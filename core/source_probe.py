@@ -36,6 +36,16 @@ class ProbeResult:
     源探测结果数据类。
 
     Source probe result dataclass.
+
+    属性 Attributes:
+        name (str): 源名称
+        url (str): 源 URL
+        ok (bool): 探测是否成功
+        total_ms (float): 总响应时间（毫秒）
+        first_byte_ms (float): 首字节响应时间（毫秒）
+        error (Optional[str]): 错误信息（如果失败）
+        status_code (Optional[int]): HTTP 状态码
+        response_headers (Optional[Dict[str, str]]): 响应头
     """
 
     name: str
@@ -52,7 +62,17 @@ _PROBE_CACHE: Dict[str, List[ProbeResult]] = {}
 
 
 def _normalize_probe_url(url: str) -> str:
-    """标准化探测 URL。"""
+    """
+    标准化化探测 URL。
+
+    Normalize probe URL.
+
+    参数 Parameters:
+        url (str): 原始 URL
+
+    返回 Returns:
+        str: 标准化后的 URL
+    """
     if url.endswith("/simple"):
         return url.rstrip("/") + "/pip/"
     return url
@@ -61,7 +81,19 @@ def _normalize_probe_url(url: str) -> str:
 def probe_url(
     name: str, url: str, timeout: float = DEFAULT_TIMEOUT_SECONDS
 ) -> ProbeResult:
-    """探测单个 URL 的响应能力。"""
+    """
+    探测单个 URL 的响应能力。
+
+    Probe the responsiveness of a single URL.
+
+    参数 Parameters:
+        name (str): 源名称
+        url (str): 要探测的 URL
+        timeout (float): 超时时间（秒）
+
+    返回 Returns:
+        ProbeResult: 探测结果
+    """
     start = time.perf_counter()
     request = urllib.request.Request(
         _normalize_probe_url(url),
@@ -124,7 +156,19 @@ def probe_url(
 def probe_sources(
     group_name: str, sources: Iterable[dict], timeout: float = DEFAULT_TIMEOUT_SECONDS
 ) -> List[ProbeResult]:
-    """探测一组源并返回结果。"""
+    """
+    探测一组源并返回结果。
+
+    Probe a group of sources and return results.
+
+    参数 Parameters:
+        group_name (str): 源组名称（用于缓存）
+        sources (Iterable[dict]): 源列表，每个源包含 name 和 url
+        timeout (float): 超时时间（秒）
+
+    返回 Returns:
+        List[ProbeResult]: 探测结果列表
+    """
     if group_name in _PROBE_CACHE:
         logging.info("使用缓存的探测结果: %s", group_name)
         return list(_PROBE_CACHE[group_name])
@@ -146,7 +190,17 @@ def probe_sources(
 
 
 def pick_best_source(results: Iterable[ProbeResult]) -> Optional[ProbeResult]:
-    """从探测结果中选择最佳源。"""
+    """
+    从探测结果中选择最佳源。
+
+    Select the best source from probe results.
+
+    参数 Parameters:
+        results (Iterable[ProbeResult]): 探测结果列表
+
+    返回 Returns:
+        Optional[ProbeResult]: 最佳源，如果没有成功的源则返回 None
+    """
     successful = [item for item in results if item.ok]
     if not successful:
         logging.warning("没有可用的源")

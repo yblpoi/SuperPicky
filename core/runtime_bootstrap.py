@@ -11,10 +11,10 @@ system Python interpreter.
 from __future__ import annotations
 
 import argparse
-import importlib
-import json
 import os
+import json
 import sys
+import importlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,6 +101,12 @@ def _configure_ca_bundle() -> Path | None:
 def _patch_pip_for_frozen_bootstrap() -> None:
     """
     Patch pip vendored distlib so it can run from a PyInstaller-frozen process.
+
+    distlib expects a standard loader/resource finder pair and Windows launcher
+    executables inside the distlib package. In a frozen app, the PyInstaller
+    loader type is unknown to distlib, and launcher stubs are not needed for
+    our app-local runtime bootstrap. We register a fallback finder and disable
+    launcher generation on Windows.
     """
     os.environ.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
     os.environ.setdefault("PIP_USE_DEPRECATED", "legacy-certs")
@@ -115,26 +121,23 @@ def _patch_pip_for_frozen_bootstrap() -> None:
         if type(loader) not in finder_registry:
             distlib_resources.register_finder(loader, distlib_resources.ResourceFinder)
 
-    import pip._internal.cli.index_command as pip_index_command
-    import pip._vendor.certifi as pip_certifi
     import pip._vendor.distlib.scripts as distlib_scripts
+    import pip._vendor.certifi as pip_certifi
+    import pip._internal.cli.index_command as pip_index_command
 
     if not getattr(distlib_scripts.ScriptMaker.__init__, "_superpicky_patched", False):
         original_init = distlib_scripts.ScriptMaker.__init__
 
         def _patched_init(self, source_dir, target_dir, add_launchers=True, dry_run=False, fileop=None):
-            return original_init(
-                self,
-                source_dir,
-                target_dir,
-                add_launchers=False,
-                dry_run=dry_run,
-                fileop=fileop,
-            )
+            # We do not need .exe launcher stubs in the app-local target dir.
+            return original_init(self, source_dir, target_dir, add_launchers=False, dry_run=dry_run, fileop=fileop)
 
         _patched_init._superpicky_patched = True  # type: ignore[attr-defined]
         distlib_scripts.ScriptMaker.__init__ = _patched_init
 
+    # Frozen bootstrap can resolve vendored certifi resources incorrectly under
+    # truststore. Force pip to skip the truststore SSL context path and fall
+    # back to its legacy certificate behavior.
     pip_index_command._create_truststore_ssl_context = lambda: None
     if cert_path is not None:
         pip_certifi.where = lambda: str(cert_path)

@@ -4,6 +4,7 @@
 -r requirements_base.txt
 
 # PyTorch CUDA 11.8 wheels
+--extra-index-url https://mirror.nju.edu.cn/pytorch/whl/cu118/
 --extra-index-url https://download.pytorch.org/whl/cu118
 torch==2.7.1+cu118
 torchvision==0.22.1+cu118

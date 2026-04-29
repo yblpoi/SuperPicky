@@ -187,7 +187,7 @@ def _write_local_meta(meta: dict) -> None:
 
 
 def _get_update_temp_dir() -> Path:
-    """返回补丁下载临时目录。"""
+    """返回补丁下载临时目录（%TEMP%\\superpickyupdate 或 /tmp/superpickyupdate）"""
     base = Path(tempfile.gettempdir())
     tmp_dir = base / "superpickyupdate"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -201,7 +201,10 @@ def _download_to_temp(url: str, timeout: int = 60) -> Optional[Path]:
         with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
             suffix = Path(url).suffix or ".tmp"
             tmp_dir = _get_update_temp_dir()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=tmp_dir) as f:
+            # 使用固定目录 + 随机文件名，Windows 用户可在任务管理器/资源管理器看到
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix, dir=tmp_dir
+            ) as f:
                 shutil.copyfileobj(resp, f)
                 return Path(f.name)
     except Exception:

@@ -88,16 +88,20 @@ class AdvancedConfig:
         # 更新提醒控制
         "ignored_update_version": None,  # 跳过提醒的版本号，如 "4.3.0"
         "include_prerelease": False,      # 是否接收 Beta/RC 更新提醒
-        "auto_check_updates": True,       # 启动时自动检查更新（含补丁）
+        "auto_check_updates": False,       # 启动时自动检查更新（含补丁）
 
         # V4.3+: 轻量底包首启初始化状态
         "initialization_completed": False,
         "initialization_manifest_version": "v1",
         "initialization_in_progress": False,
+        "last_init_exit_reason": "none",
+        "last_init_mode": "none",
 
         # V4.3+: 运行时选择与能力探测
         "selected_runtime_variant": "auto",   # auto | cpu | cuda | mac
         "detected_cuda_capable": False,
+        "runtime_install_location_preference": None,  # None | default | install
+        "resolved_runtime_dir": None,
 
         # V4.3+: 首启启用的功能集与资源记录
         "enabled_feature_set": [
@@ -389,7 +393,7 @@ class AdvancedConfig:
 
     @property
     def auto_check_updates(self) -> bool:
-        return self.config.get("auto_check_updates", True)
+        return self.config.get("auto_check_updates", False)
 
     def set_auto_check_updates(self, value: bool):
         """设置启动时是否自动检查更新。"""
@@ -421,6 +425,24 @@ class AdvancedConfig:
         self._set_init_config("initialization_in_progress", bool(value))
 
     @property
+    def last_init_exit_reason(self) -> str:
+        value = str(self.config.get("last_init_exit_reason", "none") or "none")
+        return value if value in ("none", "interrupted", "failed") else "none"
+
+    def set_last_init_exit_reason(self, value: str):
+        normalized = value if value in ("none", "interrupted", "failed") else "none"
+        self._set_init_config("last_init_exit_reason", normalized)
+
+    @property
+    def last_init_mode(self) -> str:
+        value = str(self.config.get("last_init_mode", "none") or "none")
+        return value if value in ("none", "init", "repair") else "none"
+
+    def set_last_init_mode(self, value: str):
+        normalized = value if value in ("none", "init", "repair") else "none"
+        self._set_init_config("last_init_mode", normalized)
+
+    @property
     def selected_runtime_variant(self) -> str:
         return str(self.config.get("selected_runtime_variant", "auto"))
 
@@ -434,6 +456,23 @@ class AdvancedConfig:
 
     def set_detected_cuda_capable(self, value: bool):
         self._set_init_config("detected_cuda_capable", bool(value))
+
+    @property
+    def runtime_install_location_preference(self):
+        value = self.config.get("runtime_install_location_preference", None)
+        return value if value in ("default", "install", None) else None
+
+    def set_runtime_install_location_preference(self, value):
+        normalized = value if value in ("default", "install") else None
+        self._set_init_config("runtime_install_location_preference", normalized)
+
+    @property
+    def resolved_runtime_dir(self):
+        value = self.config.get("resolved_runtime_dir", None)
+        return None if value in (None, "") else str(value)
+
+    def set_resolved_runtime_dir(self, value):
+        self._set_init_config("resolved_runtime_dir", None if not value else str(value))
 
     @property
     def enabled_feature_set(self) -> list:

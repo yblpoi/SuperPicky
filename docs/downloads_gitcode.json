@@ -1,10 +1,10 @@
 {
   "beta": {
-    "tag": "v4.2.5-RC11",
+    "tag": "v4.2.5",
     "files": {
-      "mac_arm64": "https://gitcode.com/Jamesphotography/SuperPicky/releases/download/v4.2.5-RC11/SuperPicky_v4.2.5_arm64_3c4955d.dmg",
-      "win_cpu": "https://gitcode.com/Jamesphotography/SuperPicky/releases/download/v4.2.5-RC11/SuperPicky_Setup_Win64_4.2.5_3c4955d.exe",
-      "win_cuda": "https://gitcode.com/Jamesphotography/SuperPicky/releases/download/v4.2.5-RC11/SuperPicky_CUDA_Patch_Win64_4.2.5_3c4955d.exe"
+      "mac_arm64": "SuperPicky_v4.2.5_arm64_5e68551.dmg",
+      "win_cpu": "SuperPicky_Setup_Win64_4.2.5_5e68551.exe",
+      "win_cuda": "SuperPicky_CUDA_Patch_Win64_4.2.5_5e68551.exe"
     }
   }
 }
