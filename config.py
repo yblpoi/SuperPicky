@@ -650,6 +650,79 @@ def get_best_device():
         return torch.device('cpu')
 
 
+def migrate_old_data() -> bool:
+    """
+    将旧 Documents 数据目录中的程序配置产物迁移到标准配置目录。
+    Migrate program configuration artifacts from the legacy Documents data dir into the standard config dir.
+
+    当前 `dev` 分支已经把以下内容切到 `get_app_config_dir()`：
+    The current `dev` branch already stores the following under `get_app_config_dir()`:
+    - `advanced_config.json`
+    - `patch_meta.json`
+    - `code_updates/`
+
+    但 BirdID 用户设置仍保留在 `~/Documents/SuperPicky_Data/`，因此这里只迁移上述程序级配置，
+    不整体搬迁旧目录，避免破坏仍依赖 Documents 的用户数据。
+    BirdID user settings still live under `~/Documents/SuperPicky_Data/`, so only the program-level
+    config artifacts above are migrated and the legacy directory is not moved wholesale.
+    """
+    try:
+        old_data_dir = Path.home() / 'Documents' / 'SuperPicky_Data'
+        new_config_dir = get_app_config_dir()
+
+        if not old_data_dir.exists() or not old_data_dir.is_dir():
+            return True
+
+        migration_targets = [
+            'advanced_config.json',
+            'patch_meta.json',
+            'code_updates',
+        ]
+
+        existing_targets = [old_data_dir / name for name in migration_targets if (old_data_dir / name).exists()]
+        if not existing_targets:
+            return True
+
+        print(f"检测到旧配置目录内容: {old_data_dir}")
+        print(f"开始迁移到新配置目录: {new_config_dir}")
+        new_config_dir.mkdir(parents=True, exist_ok=True)
+
+        migrated_names: List[str] = []
+        for source_path in existing_targets:
+            destination_path = new_config_dir / source_path.name
+            try:
+                if source_path.is_file():
+                    import shutil
+
+                    shutil.copy2(source_path, destination_path)
+                elif source_path.is_dir():
+                    import shutil
+
+                    shutil.copytree(source_path, destination_path, dirs_exist_ok=True)
+                migrated_names.append(source_path.name)
+            except Exception as exc:
+                print(f"复制旧配置失败 {source_path.name}: {exc}")
+                return False
+
+        for name in migrated_names:
+            old_path = old_data_dir / name
+            try:
+                if old_path.is_file():
+                    old_path.unlink()
+                elif old_path.is_dir():
+                    import shutil
+
+                    shutil.rmtree(old_path)
+            except Exception as exc:
+                print(f"清理旧配置失败 {name}: {exc}")
+
+        print(f"已迁移 {len(migrated_names)} 个配置项: {', '.join(migrated_names)}")
+        return True
+    except Exception as exc:
+        print(f"数据迁移失败: {exc}")
+        return False
+
+
 # 全局配置实例，供多数模块直接 import 使用。
 # Global configuration instance intended for direct import by most modules.
 config = Config()
