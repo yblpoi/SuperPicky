@@ -1,0 +1,12 @@
+# Runtime dependencies for the lightweight package CUDA initialization flow.
+# CUDA baseline is intentionally fixed at cu118 for this first iteration.
+
+-r requirements_base.txt
+
+--extra-index-url https://mirror.nju.edu.cn/pytorch/whl/cu118/
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.7.1+cu118
+torchvision==0.22.1+cu118
+torchaudio==2.7.1+cu118
+lap
+huggingface_hub

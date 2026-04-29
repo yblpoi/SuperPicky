@@ -90,6 +90,27 @@ class AdvancedConfig:
         "include_prerelease": False,      # 是否接收 Beta/RC 更新提醒
         "auto_check_updates": True,       # 启动时自动检查更新（含补丁）
 
+        # V4.3+: 轻量底包首启初始化状态
+        "initialization_completed": False,
+        "initialization_manifest_version": "v1",
+        "initialization_in_progress": False,
+
+        # V4.3+: 运行时选择与能力探测
+        "selected_runtime_variant": "auto",   # auto | cpu | cuda | mac
+        "detected_cuda_capable": False,
+
+        # V4.3+: 首启启用的功能集与资源记录
+        "enabled_feature_set": [
+            "core_detection",
+            "quality",
+            "keypoint",
+            "flight",
+            "birdid",
+        ],
+        "downloaded_resources": {},
+        "resolved_source_map": {},
+        "last_init_error": None,
+
         # 主界面复选框状态
         "flight_check": False,   # 飞鸟检测默认关闭（开启后速度较慢，用户可手动开启）
         "burst_check": False,    # 连拍检测默认关闭（开启后速度较慢，用户可手动开启）
@@ -373,6 +394,74 @@ class AdvancedConfig:
     def set_auto_check_updates(self, value: bool):
         """设置启动时是否自动检查更新。"""
         self.config["auto_check_updates"] = bool(value)
+
+    # V4.3+: 首启初始化状态 getter/setter
+    def _set_init_config(self, key: str, value):
+        self.config[key] = value
+
+    @property
+    def initialization_completed(self) -> bool:
+        return self.config.get("initialization_completed", False)
+
+    def set_initialization_completed(self, value: bool):
+        self._set_init_config("initialization_completed", bool(value))
+
+    @property
+    def initialization_manifest_version(self) -> str:
+        return str(self.config.get("initialization_manifest_version", "v1"))
+
+    def set_initialization_manifest_version(self, value: str):
+        self._set_init_config("initialization_manifest_version", str(value or "v1"))
+
+    @property
+    def initialization_in_progress(self) -> bool:
+        return self.config.get("initialization_in_progress", False)
+
+    def set_initialization_in_progress(self, value: bool):
+        self._set_init_config("initialization_in_progress", bool(value))
+
+    @property
+    def selected_runtime_variant(self) -> str:
+        return str(self.config.get("selected_runtime_variant", "auto"))
+
+    def set_selected_runtime_variant(self, value: str):
+        if value in ("auto", "cpu", "cuda", "mac"):
+            self._set_init_config("selected_runtime_variant", value)
+
+    @property
+    def detected_cuda_capable(self) -> bool:
+        return self.config.get("detected_cuda_capable", False)
+
+    def set_detected_cuda_capable(self, value: bool):
+        self._set_init_config("detected_cuda_capable", bool(value))
+
+    @property
+    def enabled_feature_set(self) -> list:
+        return list(self.config.get("enabled_feature_set", []))
+
+    def set_enabled_feature_set(self, features: list):
+        self._set_init_config("enabled_feature_set", list(features))
+
+    @property
+    def downloaded_resources(self) -> dict:
+        return dict(self.config.get("downloaded_resources", {}))
+
+    def set_downloaded_resources(self, resources: dict):
+        self._set_init_config("downloaded_resources", dict(resources))
+
+    @property
+    def resolved_source_map(self) -> dict:
+        return dict(self.config.get("resolved_source_map", {}))
+
+    def set_resolved_source_map(self, source_map: dict):
+        self._set_init_config("resolved_source_map", dict(source_map))
+
+    @property
+    def last_init_error(self):
+        return self.config.get("last_init_error", None)
+
+    def set_last_init_error(self, value):
+        self._set_init_config("last_init_error", value if value is None else str(value))
 
     # 主界面复选框状态 getter/setter
     @property

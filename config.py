@@ -23,6 +23,7 @@ Documentation entry points:
 """
 
 import json
+import importlib
 import os
 import platform
 import sys
@@ -31,7 +32,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-import torch
+try:
+    import torch
+except Exception:
+    # Lightweight-package startup may occur before Torch is installed.
+    torch = None
+
+
+class _FallbackDevice:
+    def __init__(self, device_type: str):
+        self.type = device_type
+
+    def __str__(self) -> str:
+        return self.type
+
+
+def _get_torch_module():
+    """Lazily (re)load torch so lightweight init can install it at runtime."""
+    global torch
+    if torch is not None:
+        return torch
+    try:
+        torch = importlib.import_module("torch")
+    except Exception:
+        torch = None
+    return torch
 
 
 # =========================
@@ -637,17 +662,21 @@ def get_best_device():
     On any detection failure, conservatively fall back to CPU.
     """
     try:
+        torch_module = _get_torch_module()
+        if torch_module is None:
+            return _FallbackDevice("cpu")
         system = platform.system()
         if system == 'Darwin':
-            if torch.backends.mps.is_available():
-                return torch.device('mps')
-            return torch.device('cpu')
+            if torch_module.backends.mps.is_available():
+                return torch_module.device('mps')
+            return torch_module.device('cpu')
 
-        if torch.cuda.is_available():
-            return torch.device('cuda')
-        return torch.device('cpu')
+        if torch_module.cuda.is_available():
+            return torch_module.device('cuda')
+        return torch_module.device('cpu')
     except Exception:
-        return torch.device('cpu')
+        torch_module = _get_torch_module()
+        return torch_module.device('cpu') if torch_module is not None else _FallbackDevice("cpu")
 
 
 def migrate_old_data() -> bool:
