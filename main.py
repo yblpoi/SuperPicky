@@ -11,6 +11,13 @@ import os
 # V3.9.3: 修复 macOS PyInstaller 打包后的多进程问题
 # 必须在所有其他导入之前设置
 import multiprocessing
+from config import (
+    get_runtime_app_root,
+    get_runtime_meipass,
+    migrate_old_data,
+    set_runtime_app_root,
+)
+
 if sys.platform == 'darwin':
     multiprocessing.set_start_method('spawn', force=True)
 
@@ -32,12 +39,28 @@ def _inject_patch_path():
     if os.path.isdir(_patch_dir) and _patch_dir not in sys.path:
         sys.path.insert(0, _patch_dir)
     # 记录真实 app 根目录，供补丁中的模块查找资源文件（模型、exiftool 等）
-    if not hasattr(sys, '_SUPERPICKY_APP_ROOT'):
-        if hasattr(sys, '_MEIPASS'):
-            sys._SUPERPICKY_APP_ROOT = sys._MEIPASS
+    if get_runtime_app_root() is None:
+        meipass = get_runtime_meipass()
+        if meipass is not None:
+            set_runtime_app_root(meipass)
         else:
-            sys._SUPERPICKY_APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+            set_runtime_app_root(os.path.dirname(os.path.abspath(__file__)))
 _inject_patch_path()
+
+
+def _run_runtime_bootstrap_if_requested():
+    """
+    在请求时进入运行时自举流程并立即退出当前主入口。
+    Enter the runtime bootstrap flow when requested and exit this main entrypoint.
+    """
+    if "--runtime-bootstrap" not in sys.argv[1:]:
+        return
+    from core.runtime_bootstrap import run_runtime_bootstrap
+
+    raise SystemExit(run_runtime_bootstrap(sys.argv[1:]))
+
+
+_run_runtime_bootstrap_if_requested()
 
 # Fix Windows console encoding: default cp1252 cannot render emoji/CJK characters,
 # causing UnicodeEncodeError crashes on print(). Reconfigure to UTF-8 with replacement
@@ -79,6 +102,10 @@ from tools.system_logger import setup_error_logging
 
 # 尽早捕获未处理异常，写入 superpicky.log（或 config dir fallback）
 setup_error_logging()
+
+# 启动阶段先完成遗留数据迁移，避免后续模块读到旧路径状态。
+# Finish legacy data migration before later modules observe stale paths.
+migrate_old_data()
 
 # 内存监视器（开发调试用）：设置环境变量 SP_MEMORY_MONITOR=1 启用
 # 例：SP_MEMORY_MONITOR=1 python main.py

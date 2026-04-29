@@ -67,6 +67,37 @@ def _get_torch_module():
 # This layer only defines path conventions and does not implement actual config read/write behavior.
 
 
+def get_runtime_meipass() -> Optional[str]:
+    """
+    返回 PyInstaller 注入的 `_MEIPASS` 路径字符串。
+    Return the `_MEIPASS` path string injected by PyInstaller.
+    """
+    meipass = getattr(sys, '_MEIPASS', None)
+    if isinstance(meipass, str) and meipass:
+        return meipass
+    return None
+
+
+def get_runtime_app_root() -> Optional[str]:
+    """
+    返回补丁覆盖层记录的真实应用根目录字符串。
+    Return the real application root string recorded for the patch overlay.
+    """
+    app_root = getattr(sys, '_SUPERPICKY_APP_ROOT', None)
+    if isinstance(app_root, str) and app_root:
+        return app_root
+    return None
+
+
+def set_runtime_app_root(app_root: str) -> str:
+    """
+    写入补丁覆盖层共享的真实应用根目录。
+    Persist the real application root shared by the patch overlay.
+    """
+    setattr(sys, '_SUPERPICKY_APP_ROOT', app_root)
+    return app_root
+
+
 def resource_path(relative_path: str) -> str:
     """
     返回打包资源路径，兼容开发环境与 PyInstaller。
@@ -78,8 +109,8 @@ def resource_path(relative_path: str) -> str:
     这里只用于内置资源定位，不能拿来定位用户配置或用户数据。
     This is only for bundled resource lookup and must not be used for user config or user data paths.
     """
-    meipass = getattr(sys, '_MEIPASS', None)
-    if isinstance(meipass, str):
+    meipass = get_runtime_meipass()
+    if meipass is not None:
         return os.path.join(meipass, relative_path)
     return os.path.join(os.path.abspath('.'), relative_path)
 
