@@ -13,8 +13,10 @@ SuperPicky - 在线补丁管理器
 """
 
 import sys
+import os
 import json
 import ssl
+import stat
 import shutil
 import zipfile
 import tempfile
@@ -53,6 +55,77 @@ def _get_app_data_dir() -> Path:
 def get_patch_dir() -> Path:
     """返回补丁解压目录，注入 sys.path 时使用"""
     return shared_get_patch_dir()
+
+
+def get_patch_runtime_channel() -> str:
+    """返回当前运行环境的发布渠道。"""
+    try:
+        from core.build_info import RELEASE_CHANNEL
+
+        if RELEASE_CHANNEL in ("official", "nightly"):
+            return RELEASE_CHANNEL
+    except Exception:
+        pass
+    return "dev"
+
+
+def get_patch_runtime_block_reason() -> Optional[str]:
+    """返回当前环境禁止在线补丁的原因；允许时返回 None。"""
+    if not getattr(sys, "frozen", False):
+        return "源码运行环境禁用在线补丁"
+
+    channel = get_patch_runtime_channel()
+    if channel not in ("nightly", "official"):
+        return f"{channel} 渠道禁用在线补丁"
+
+    return None
+
+
+def _normalize_patch_channels(meta: dict) -> set[str]:
+    channels: set[str] = set()
+
+    for key in ("target_channels", "channels"):
+        value = meta.get(key)
+        if isinstance(value, list):
+            channels.update(
+                str(item).strip().lower()
+                for item in value
+                if str(item).strip()
+            )
+
+    for key in ("target_channel", "channel", "release_channel"):
+        value = meta.get(key)
+        if isinstance(value, str) and value.strip():
+            channels.add(value.strip().lower())
+
+    return channels
+
+
+def validate_patch_metadata(meta: dict, current_app_version: str) -> Tuple[bool, str]:
+    """校验当前运行环境与补丁元数据是否允许应用。"""
+    blocked_reason = get_patch_runtime_block_reason()
+    if blocked_reason:
+        return False, blocked_reason
+
+    if not isinstance(meta, dict):
+        return False, "补丁元数据格式无效"
+
+    base_version = str(meta.get("base_version", "")).strip()
+    if not base_version:
+        return False, "补丁元数据缺少 base_version"
+    if base_version != current_app_version:
+        return False, f"补丁 base_version={base_version} 与当前版本 {current_app_version} 不匹配"
+
+    patch_version = str(meta.get("patch_version", "")).strip()
+    if not patch_version:
+        return False, "补丁元数据缺少 patch_version"
+
+    target_channels = _normalize_patch_channels(meta)
+    current_channel = get_patch_runtime_channel()
+    if target_channels and current_channel not in target_channels:
+        return False, f"补丁渠道限制为 {sorted(target_channels)}，当前渠道为 {current_channel}"
+
+    return True, "ok"
 
 
 def _get_local_meta_path() -> Path:
@@ -113,17 +186,60 @@ def _write_local_meta(meta: dict) -> None:
     path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _get_update_temp_dir() -> Path:
+    """返回补丁下载临时目录（%TEMP%\\superpickyupdate 或 /tmp/superpickyupdate）"""
+    base = Path(tempfile.gettempdir())
+    tmp_dir = base / "superpickyupdate"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    return tmp_dir
+
+
 def _download_to_temp(url: str, timeout: int = 60) -> Optional[Path]:
     """下载文件到临时路径，返回临时文件 Path，失败返回 None"""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "SuperPicky-PatchManager"})
         with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
             suffix = Path(url).suffix or ".tmp"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+            tmp_dir = _get_update_temp_dir()
+            # 使用固定目录 + 随机文件名，Windows 用户可在任务管理器/资源管理器看到
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix, dir=tmp_dir
+            ) as f:
                 shutil.copyfileobj(resp, f)
                 return Path(f.name)
     except Exception:
         return None
+
+
+def _make_path_writable(path: str) -> None:
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+    except Exception:
+        pass
+
+
+def _remove_tree_safely(path: Path) -> None:
+    def _onerror(func, target, _exc_info):
+        _make_path_writable(target)
+        func(target)
+
+    shutil.rmtree(path, onerror=_onerror)
+
+
+def safe_clear_patch() -> Tuple[bool, str]:
+    """安全清理补丁目录与本地元数据。"""
+    patch_dir = get_patch_dir()
+    meta_path = _get_local_meta_path()
+
+    try:
+        if patch_dir.exists():
+            _remove_tree_safely(patch_dir)
+        if meta_path.exists():
+            _make_path_writable(str(meta_path))
+            meta_path.unlink(missing_ok=True)
+        return True, "补丁环境已清除"
+    except Exception as exc:
+        return False, f"补丁环境清理失败: {exc}"
 
 
 def apply_patch_file(zip_path: Path, meta: dict) -> bool:
@@ -139,9 +255,16 @@ def apply_patch_file(zip_path: Path, meta: dict) -> bool:
     """
     patch_dir = get_patch_dir()
     try:
+        from constants import APP_VERSION
+
+        valid, reason = validate_patch_metadata(meta, APP_VERSION)
+        if not valid:
+            print(f"[PatchManager] 已拒绝应用补丁: {reason}")
+            return False
+
         # 先清空旧补丁
         if patch_dir.exists():
-            shutil.rmtree(patch_dir)
+            _remove_tree_safely(patch_dir)
         patch_dir.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -159,13 +282,8 @@ def apply_patch_file(zip_path: Path, meta: dict) -> bool:
 
 def clear_patch() -> None:
     """清除当前补丁（回滚到内置版本）"""
-    patch_dir = get_patch_dir()
-    meta_path = _get_local_meta_path()
-    if patch_dir.exists():
-        shutil.rmtree(patch_dir, ignore_errors=True)
-    if meta_path.exists():
-        meta_path.unlink(missing_ok=True)
-    print("[PatchManager] 补丁已清除")
+    _success, message = safe_clear_patch()
+    print(f"[PatchManager] {message}")
 
 
 def check_and_apply_patch_from_gitcode(
@@ -197,9 +315,9 @@ def check_and_apply_patch_from_gitcode(
     if not remote_meta:
         return False, "拉取 GitCode patch_meta.json 失败"
 
-    base_version = remote_meta.get("base_version", "")
-    if base_version != current_app_version:
-        return False, f"补丁 base_version={base_version} 与当前版本 {current_app_version} 不匹配"
+    valid, reason = validate_patch_metadata(remote_meta, current_app_version)
+    if not valid:
+        return False, reason
 
     remote_patch_version = remote_meta.get("patch_version", "")
     local_meta = read_local_meta()
@@ -255,9 +373,9 @@ def check_and_apply_patch_from_mirror(
     if not remote_meta:
         return False, "镜像服务器不可用"
 
-    base_version = remote_meta.get("base_version", "")
-    if base_version != current_app_version:
-        return False, f"补丁 base_version={base_version} 与当前版本 {current_app_version} 不匹配"
+    valid, reason = validate_patch_metadata(remote_meta, current_app_version)
+    if not valid:
+        return False, reason
 
     remote_patch_version = remote_meta.get("patch_version", "")
     local_meta = read_local_meta()
@@ -311,9 +429,9 @@ def check_and_apply_patch(
         return False, "拉取 patch_meta.json 失败"
 
     # 3. 检查 base_version 是否匹配当前应用版本
-    base_version = remote_meta.get("base_version", "")
-    if base_version != current_app_version:
-        return False, f"补丁 base_version={base_version} 与当前版本 {current_app_version} 不匹配"
+    valid, reason = validate_patch_metadata(remote_meta, current_app_version)
+    if not valid:
+        return False, reason
 
     # 4. 对比本地补丁版本
     remote_patch_version = remote_meta.get("patch_version", "")

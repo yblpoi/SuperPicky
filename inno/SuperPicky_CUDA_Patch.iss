@@ -1,11 +1,26 @@
+; SuperPicky CUDA 补丁安装脚本
+; SuperPicky CUDA Patch installer script
+; Non-commercial use only
+
+#define MyAppName "SuperPicky"
+#define MyAppVersion "unknown"
+#define MyAppPublisher "JamesPhotography"
+#define MyAppURL "superpicky.app"
+#define MyAppExeName "SuperPicky.exe"
+#define MyAppCommitHash "unknown"
+#define OutputBaseFilename "SuperPicky_CUDA_Patch_Win64_{#MyAppVersion}_{#MyAppCommitHash}"
+
 [Setup]
 AppId=SuperPicky.CUDAPatch
-AppName=SuperPicky CUDA Patch
-AppVersion=4.2.0-113b079
+AppName={#MyAppName} CUDA Patch
+AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} CUDA Patch {#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\SuperPicky
 DefaultGroupName=SuperPicky
-AppPublisherURL=https://superpicky.app/
-OutputBaseFilename=SuperPicky_CUDA_Patch_Win64_4.2.0_113b079
+OutputDir=output
+OutputBaseFilename={#OutputBaseFilename}
 Compression=lzma2/ultra64
 LZMAUseSeparateProcess=yes
 LZMADictionarySize=1048576
@@ -15,16 +30,13 @@ CreateAppDir=yes
 Uninstallable=no
 SetupIconFile=img\icon.ico
 WizardStyle=modern
+WizardImageFile=img\icon.png
+WizardSmallImageFile=img\icon.png
 DisableProgramGroupPage=yes
 DisableDirPage=no
 DisableReadyPage=no
 DisableFinishedPage=no
 DirExistsWarning=no
-VersionInfoCompany=https://superpicky.app/
-WizardImageFile=img\icon.png
-WizardSmallImageFile=img\icon.png
-AlwaysShowComponentsList=no
-AlwaysShowGroupOnReadyPage=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
@@ -151,11 +163,11 @@ begin
 end;
 
 [Files]
-Source: "SuperPicky.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
-Filename: "{app}\SuperPicky.exe"; Description: "{cm:LaunchProgram,SuperPicky}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"

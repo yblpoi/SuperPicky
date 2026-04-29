@@ -1,19 +1,12 @@
 @echo off
 setlocal EnableExtensions
 
-set "VERSION_INPUT=%~1"
-if "%VERSION_INPUT%"=="" (
-    set "VERSION_ARG=_Win64_CUDA"
-) else (
-    set "VERSION_ARG=%VERSION_INPUT%_Win64_CUDA"
-)
+set "SCRIPT_DIR=%~dp0"
+set "PYTHON_EXE=%SCRIPT_DIR%.venv\Scripts\python.exe"
+if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python"
 
-call "%~dp0.venv\Scripts\activate.bat"
-if errorlevel 1 exit /b 1
+set "VERSION_ARG="
+if not "%~1"=="" set "VERSION_ARG=--version %~1"
 
-set "OUT_DIST_DIR=dist_cuda"
-call "%~dp0build_release.bat" "%VERSION_ARG%" "output\win64_cuda"
-set "RET=%ERRORLEVEL%"
-
-call "%~dp0.venv\Scripts\deactivate.bat" >nul 2>&1
-exit /b %RET%
+"%PYTHON_EXE%" "%SCRIPT_DIR%build_release_win.py" --build-type cuda %VERSION_ARG% --copy-dir output\win64_cuda
+exit /b %ERRORLEVEL%

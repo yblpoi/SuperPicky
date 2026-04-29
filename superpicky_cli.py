@@ -37,6 +37,8 @@ import argparse
 import sys
 import os
 from pathlib import Path
+from types import SimpleNamespace
+from core.recursive_scanner import DEFAULT_SCAN_MAX_DEPTH
 from tools.i18n import t
 
 # 确保模块路径正确
@@ -196,8 +198,8 @@ def cmd_process(args):
         # V4.1: Crop
         save_crop=args.save_crop,
         birdid_use_ebird=True,
-        birdid_country_code=getattr(args, 'birdid_country', None),
-        birdid_region_code=getattr(args, 'birdid_region', None),
+        birdid_country_code=getattr(args, 'birdid_country', None) or "",
+        birdid_region_code=getattr(args, 'birdid_region', None) or "",
         birdid_confidence_threshold=getattr(args, 'birdid_threshold', 70.0)
     )
     
@@ -787,28 +789,35 @@ def cmd_identify(args):
 
 def cmd_batch(args):
     """递归批量处理子目录"""
-    from core.recursive_scanner import scan_recursive, count_photos, is_processed
+    from core.recursive_scanner import is_dangerous_root, is_processed, scan_directories
     from core.batch_processor import BatchProcessor
     from core.photo_processor import ProcessingSettings
     from advanced_config import get_advanced_config
     
     print_banner()
     print(f"\n📂 批量处理: {args.directory}")
+
+    is_dangerous, reason = is_dangerous_root(args.directory)
+    if is_dangerous:
+        print(f"\n❌ {t('health.dangerous_dir_title')}")
+        print(t("health.dangerous_dir_msg", directory=args.directory, reason=reason))
+        return 1
     
     # 扫描
-    dirs = scan_recursive(args.directory, max_depth=args.max_depth)
+    scan_results = scan_directories(args.directory, max_depth=args.max_depth)
     
-    if not dirs:
-        print("\n❌ 未找到包含照片的子目录")
+    if not scan_results:
+        print(f"\n❌ {t('health.no_photos_title')}")
+        print(t("health.no_photos_msg", directory=args.directory))
         return 1
     
     # 预览
-    print(f"\n🔍 找到 {len(dirs)} 个待处理目录:")
+    print(f"\n🔍 找到 {len(scan_results)} 个待处理目录:")
     total_photos = 0
-    for i, d in enumerate(dirs, 1):
-        rel = os.path.relpath(d, args.directory)
-        n = count_photos(d)
-        processed = is_processed(d)
+    for i, scanned_dir in enumerate(scan_results, 1):
+        rel = os.path.relpath(scanned_dir.path, args.directory)
+        n = scanned_dir.photo_count
+        processed = is_processed(scanned_dir.path)
         status = " (已处理)" if processed else ""
         print(f"  {i:3d}. {rel}/ ({n} 张){status}")
         total_photos += n
@@ -821,7 +830,7 @@ def cmd_batch(args):
     
     # 确认
     if not args.yes:
-        confirm = input(f"\n确定处理这 {len(dirs)} 个目录? [y/N]: ")
+        confirm = input(f"\n确定处理这 {len(scan_results)} 个目录? [y/N]: ")
         if confirm.lower() not in ['y', 'yes']:
             print("❌ 已取消")
             return 1
@@ -848,8 +857,8 @@ def cmd_batch(args):
         auto_identify=auto_identify,
         save_crop=getattr(args, 'save_crop', False),
         birdid_use_ebird=True,
-        birdid_country_code=getattr(args, 'birdid_country', None),
-        birdid_region_code=getattr(args, 'birdid_region', None),
+        birdid_country_code=getattr(args, 'birdid_country', None) or "",
+        birdid_region_code=getattr(args, 'birdid_region', None) or "",
         birdid_confidence_threshold=getattr(args, 'birdid_threshold', 70.0),
     )
     
@@ -862,7 +871,7 @@ def cmd_batch(args):
     )
     
     result = processor.process(
-        dirs=dirs,
+        dirs=scan_results,
         organize_files=args.organize,
         cleanup_temp=not adv_config.keep_temp_files,
     )
@@ -907,11 +916,7 @@ def cmd_batch_reset(args):
         print(f"🔄 [{i}/{len(processed_dirs)}] 重置: {rel}/")
         
         # 创建一个模拟的 args 对象给 cmd_reset
-        class ResetArgs:
-            pass
-        reset_args = ResetArgs()
-        reset_args.directory = d
-        reset_args.yes = True  # 已经确认过了
+        reset_args = SimpleNamespace(directory=d, yes=True)
         
         try:
             ret = cmd_reset(reset_args)
@@ -1097,8 +1102,8 @@ Examples:
                         help='跳过已处理的目录')
     p_batch.add_argument('--dry-run', action='store_true',
                         help='仅列出待处理目录，不执行')
-    p_batch.add_argument('--max-depth', type=int, default=10,
-                        help='最大递归深度 (默认: 10)')
+    p_batch.add_argument('--max-depth', type=int, default=DEFAULT_SCAN_MAX_DEPTH,
+                        help=f'最大递归深度 (默认: {DEFAULT_SCAN_MAX_DEPTH})')
     p_batch.add_argument('-y', '--yes', action='store_true',
                         help='跳过确认提示')
     p_batch.add_argument('-q', '--quiet', action='store_true')

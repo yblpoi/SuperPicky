@@ -1,3 +1,8 @@
+@echo off
+setlocal EnableExtensions
 
-call build_release_cpu.bat %1
-:: call build_release_cuda.bat %1
+call "%~dp0build_release_cpu.bat" %*
+if errorlevel 1 exit /b %ERRORLEVEL%
+
+call "%~dp0build_release_lite_win.bat" %*
+exit /b %ERRORLEVEL%

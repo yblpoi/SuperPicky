@@ -14,14 +14,17 @@ __version__ = "1.0.0"
 
 import os
 import sqlite3
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import torch
 from PIL import Image
 from torchvision import models, transforms
-from config import get_best_device
+from config import (
+    get_best_device,
+    get_install_scoped_resource_path,
+    get_packaged_model_relative_path,
+)
 
 
 def _torch_load_compat(path: str, *, map_location: str, weights_only: bool):
@@ -73,11 +76,14 @@ def _load_osea_checkpoint(model_path: str):
         return _torch_load_compat(model_path, map_location="cpu", weights_only=True)
     except Exception as e:
         if _should_retry_without_weights_only(e):
-            print("[OSEA] weights_only=True 加载失败，回退 weights_only=False（仅限可信模型）")
-            return _torch_load_compat(model_path, map_location="cpu", weights_only=False)
+            print(
+                "[OSEA] weights_only=True 加载失败，回退 weights_only=False（仅限可信模型）"
+            )
+            return _torch_load_compat(
+                model_path, map_location="cpu", weights_only=False
+            )
         raise
 
-# ==================== 路径配置 ====================
 
 def _get_birdid_dir() -> Path:
     """获取 birdid 模块目录"""
@@ -90,37 +96,35 @@ def _get_project_root() -> Path:
 
 
 def _get_resource_path(relative_path: str) -> Path:
-    """获取资源路径 (支持 PyInstaller 打包)"""
-    if getattr(sys, 'frozen', False):
-        base = Path(sys._MEIPASS)
-    else:
-        base = _get_project_root()
-    return base / relative_path
-
-
-# ==================== 设备配置 ====================
+    """获取资源路径 (支持安装目录约束的打包场景)"""
+    packaged_relative_path = None
+    if relative_path.startswith("models/"):
+        packaged_relative_path = get_packaged_model_relative_path(relative_path)
+    return get_install_scoped_resource_path(
+        relative_path, packaged_relative_path=packaged_relative_path
+    )
 
 
 DEVICE = get_best_device()
 
 
-# ==================== 预处理 transforms ====================
+CENTER_CROP_TRANSFORM = transforms.Compose(
+    [
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ]
+)
 
-CENTER_CROP_TRANSFORM = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+BASELINE_TRANSFORM = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ]
+)
 
-BASELINE_TRANSFORM = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-
-
-# ==================== OSEA 分类器 ====================
 
 class OSEAClassifier:
     """
@@ -152,7 +156,9 @@ class OSEAClassifier:
         """
         self.device = device or DEVICE
         self.use_center_crop = use_center_crop
-        self.transform = CENTER_CROP_TRANSFORM if use_center_crop else BASELINE_TRANSFORM
+        self.transform = (
+            CENTER_CROP_TRANSFORM if use_center_crop else BASELINE_TRANSFORM
+        )
 
         self.model_path = model_path or str(_get_resource_path(self.DEFAULT_MODEL_PATH))
         self.model = self._load_model()
@@ -199,13 +205,15 @@ class OSEAClassifier:
             conn.close()
 
         num_classes = 10964
-        bird_info: List[List[str]] = [['Unknown', 'Unknown', ''] for _ in range(num_classes)]
+        bird_info: List[List[str]] = [
+            ["Unknown", "Unknown", ""] for _ in range(num_classes)
+        ]
         for class_id, cn_name, en_name, scientific_name in rows:
             if 0 <= class_id < num_classes:
                 bird_info[class_id] = [
-                    cn_name or 'Unknown',
-                    en_name or 'Unknown',
-                    scientific_name or '',
+                    cn_name or "Unknown",
+                    en_name or "Unknown",
+                    scientific_name or "",
                 ]
         return bird_info
 
@@ -228,8 +236,8 @@ class OSEAClassifier:
         Returns:
             识别结果列表 [{cn_name, en_name, scientific_name, confidence, class_id}, ...]
         """
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         input_tensor = self.transform(image).unsqueeze(0).to(self.device)
 
@@ -237,7 +245,7 @@ class OSEAClassifier:
         with torch.no_grad():
             output = self.model(input_tensor)[0]
 
-        output = output[:self.num_classes]
+        output = output[: self.num_classes]
         probs = torch.nn.functional.softmax(output / temperature, dim=0)
 
         k = min(100 if ebird_species_set else top_k, self.num_classes)
@@ -257,16 +265,16 @@ class OSEAClassifier:
             en_name = info[1]
             scientific_name = info[2] if len(info) > 2 else None
 
-            ebird_match = False
-
-            results.append({
-                'class_id': class_id,
-                'cn_name': cn_name,
-                'en_name': en_name,
-                'scientific_name': scientific_name,
-                'confidence': confidence,
-                'ebird_match': ebird_match,
-            })
+            results.append(
+                {
+                    "class_id": class_id,
+                    "cn_name": cn_name,
+                    "en_name": en_name,
+                    "scientific_name": scientific_name,
+                    "confidence": confidence,
+                    "ebird_match": False,
+                }
+            )
 
             if len(results) >= top_k:
                 break
@@ -286,8 +294,8 @@ class OSEAClassifier:
         TTA 策略: 原图 + 水平翻转取平均
         推理时间翻倍，但可能提高准确率
         """
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         input1 = self.transform(image).unsqueeze(0).to(self.device)
 
@@ -296,8 +304,8 @@ class OSEAClassifier:
 
         self.model.eval()
         with torch.no_grad():
-            output1 = self.model(input1)[0][:self.num_classes]
-            output2 = self.model(input2)[0][:self.num_classes]
+            output1 = self.model(input1)[0][: self.num_classes]
+            output2 = self.model(input2)[0][: self.num_classes]
 
         avg_output = (output1 + output2) / 2
         probs = torch.nn.functional.softmax(avg_output / temperature, dim=0)
@@ -319,22 +327,22 @@ class OSEAClassifier:
             en_name = info[1]
             scientific_name = info[2] if len(info) > 2 else None
 
-            results.append({
-                'class_id': class_id,
-                'cn_name': cn_name,
-                'en_name': en_name,
-                'scientific_name': scientific_name,
-                'confidence': confidence,
-                'ebird_match': False,
-            })
+            results.append(
+                {
+                    "class_id": class_id,
+                    "cn_name": cn_name,
+                    "en_name": en_name,
+                    "scientific_name": scientific_name,
+                    "confidence": confidence,
+                    "ebird_match": False,
+                }
+            )
 
             if len(results) >= top_k:
                 break
 
         return results
 
-
-# ==================== 全局单例 ====================
 
 _osea_classifier: Optional[OSEAClassifier] = None
 
@@ -347,8 +355,6 @@ def get_osea_classifier() -> OSEAClassifier:
     return _osea_classifier
 
 
-# ==================== 便捷函数 ====================
-
 def osea_predict(image: Image.Image, top_k: int = 5) -> List[Dict]:
     """快速 OSEA 预测"""
     classifier = get_osea_classifier()
@@ -358,11 +364,10 @@ def osea_predict(image: Image.Image, top_k: int = 5) -> List[Dict]:
 def osea_predict_file(image_path: str, top_k: int = 5) -> List[Dict]:
     """OSEA 预测 (从文件路径)"""
     from birdid.bird_identifier import load_image
+
     image = load_image(image_path)
     return osea_predict(image, top_k=top_k)
 
-
-# ==================== 测试 ====================
 
 if __name__ == "__main__":
     import argparse
@@ -374,6 +379,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     from birdid.bird_identifier import load_image
+
     image = load_image(args.image)
 
     classifier = OSEAClassifier()

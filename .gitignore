@@ -12,6 +12,7 @@ build_dist*/*
 dist*/*
 !dist/*.dmg
 build/
+.python-version
 
 # IDE
 .idea/copilot.*

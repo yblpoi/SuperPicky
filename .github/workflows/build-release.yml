@@ -18,10 +18,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -30,7 +30,6 @@ jobs:
             requirements_cuda.txt
 
       - name: Prepare telemetry build override
-        shell: pwsh
         env:
           COUNTLY_APP_KEY: ${{ secrets.COUNTLY_APP_KEY }}
           COUNTLY_SERVER_URL: ${{ secrets.COUNTLY_SERVER_URL }}
@@ -38,174 +37,52 @@ jobs:
 
       - name: Resolve release metadata
         id: release_meta
-        shell: pwsh
         env:
-          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if ($env:EVENT_NAME -eq "workflow_dispatch") {
-            $rawVersion = $env:INPUT_VERSION
-          } else {
-            $rawVersion = $env:REF_NAME
-          }
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: python scripts/ci_release.py resolve-metadata
 
-          if (-not $rawVersion) {
-            throw "Release version is required."
-          }
-
-          $tag = if ($rawVersion.StartsWith("v")) { $rawVersion } else { "v$rawVersion" }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "name=SuperPicky $tag" >> $env:GITHUB_OUTPUT
-
-      - name: Create build virtual environment
-        shell: pwsh
-        run: python -m venv .venv
-
-      - name: Install CPU build dependencies
-        shell: pwsh
-        run: |
-          .\.venv\Scripts\python.exe -m pip install --upgrade pip
-          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-
-      - name: Build CPU and CUDA patch release payloads
-        shell: pwsh
+      - name: Build Full release
         env:
           RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          .\.venv\Scripts\python.exe scripts\download_models.py
-          .\.venv\Scripts\python.exe build_release_win.py --build-type cuda-patch --copy-dir output --debug --no-zip
+        run: python build_release_win.py --build-type cpu --copy-dir output --no-zip
 
-      - name: Create CPU installer with Inno Setup
+      - name: Create Full installer with Inno Setup
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
           path: ./output/installer_cpu/SuperPicky.iss
 
-      - name: Create CUDA patch installer with Inno Setup
+      - name: Build Lite release
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
+        run: python build_release_win.py --build-type lite --copy-dir output --no-zip
+
+      - name: Create Lite installer with Inno Setup
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
-          path: ./output/cuda_patch_installer/SuperPicky_CUDA_Patch.iss
+          path: ./output/installer_lite/SuperPicky-lite.iss
 
       - name: Prepare release assets
-        shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path release_assets -Force | Out-Null
-
-          $assetPatterns = @(
-            "output/cuda_patch_installer/Output/SuperPicky_CUDA_Patch_Win64_*.exe",
-            "output/installer_cpu/Output/SuperPicky_Setup_Win64_*.exe"
-          )
-
-          foreach ($pattern in $assetPatterns) {
-            $foundFiles = Get-ChildItem -Path $pattern -File -ErrorAction Stop
-            if ($foundFiles.Count -ne 1) {
-              throw "Expected exactly one asset for pattern '$pattern', found $($foundFiles.Count)."
-            }
-            Copy-Item -Path $foundFiles[0].FullName -Destination release_assets/
-          }
+          python scripts/ci_release.py collect-assets --output-dir release_assets --pattern output/installer_cpu/Output/SuperPicky_Setup_Full_Win64_*.exe --pattern output/installer_lite/Output/SuperPicky_Setup_Lite_Win64_*.exe
 
       - name: Build code patch zip
-        shell: pwsh
-        run: |
-          $version = .\\.venv\\Scripts\\python.exe -c "from constants import APP_VERSION; print(APP_VERSION)"
-          $patchVersion = "${{ steps.release_meta.outputs.tag }}"
-          $zipName = "code_patch_${patchVersion}.zip"
-          $zipPath = "release_assets/$zipName"
-
-          # 7-Zip 在 windows-latest runner 上内置
-          # 包含所有运行时 Python 文件；排除：
-          #   main.py            — PyInstaller 入口，patch 后不会生效
-          #   build_release_win.py — 仅构建用，不需随 patch 分发
-          #   _telemetry_build.py  — 构建时临时覆盖文件
-          #   pyi_rth_*.py       — PyInstaller runtime hook，非运行时逻辑
-          #   test_*.py          — 测试脚本
-          $items = @(
-            "constants.py", "advanced_config.py", "ai_model.py",
-            "birdid_server.py", "birdid_cli.py", "iqa_scorer.py",
-            "post_adjustment_engine.py", "server_manager.py",
-            "superpicky_cli.py", "topiq_model.py",
-            "tools", "core", "ui", "birdid", "locales"
-          ) | Where-Object { Test-Path $_ }
-          & "C:\Program Files\7-Zip\7z.exe" a -tzip $zipPath @items `
-            -xr!"__pycache__" -xr!"*.pyc" -xr!"*.pyo" `
-            -xr!"main.py" | Out-Null
-
-          $meta = @{
-            patch_version = $patchVersion
-            base_version  = $version
-            applied_at    = (Get-Date -Format "o")
-          } | ConvertTo-Json
-          $meta | Out-File -Encoding utf8 "release_assets/patch_meta.json"
+        run: python scripts/ci_release.py build-patch --output-dir release_assets --patch-version ${{ steps.release_meta.outputs.tag }}
 
       - name: Clean telemetry build override
         if: always()
-        shell: pwsh
-        run: Remove-Item -Path _telemetry_build.py -Force -ErrorAction SilentlyContinue
+        run: python scripts/ci_release.py cleanup-paths --path _telemetry_build.py
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           name: ${{ steps.release_meta.outputs.name }}
           body_path: ChangeLog.md
+          fail_on_unmatched_files: true
           files: |
             release_assets/*
-
-      - name: Create GitCode Release
-        continue-on-error: true
-        shell: pwsh
-        env:
-          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          $baseUrl = "https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
-          $tag = $env:TAG
-          $headers = @{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" }
-
-          # 尝试创建 GitCode Release（Mac job 可能已抢先创建，忽略冲突）
-          $body = @{ tag_name = $tag; name = "SuperPicky $tag"; description = "See GitHub release for details." } | ConvertTo-Json
-          try {
-            Invoke-RestMethod -Uri "$baseUrl/releases" -Method Post -Body $body -Headers $headers -ErrorAction Stop
-          } catch {
-            Write-Host "Release already exists or creation failed, continuing..."
-          }
-
-      - name: Update downloads_github.json and push
-        shell: pwsh
-        env:
-          TAG: ${{ steps.release_meta.outputs.tag }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REF: ${{ github.ref_name }}
-        run: |
-          $tag = $env:TAG
-          # 从 GitHub Release 资产列表中提取各平台文件名
-          $assets = gh release view $tag --json assets --jq '.assets[].name' 2>$null
-          $macArm64 = ($assets | Where-Object { $_ -match '(?i)arm64.*\.dmg$' } | Select-Object -First 1)
-          $winCpu   = ($assets | Where-Object { $_ -match '(?i)Setup.*Win.*\.exe$' } | Select-Object -First 1)
-          $winCuda  = ($assets | Where-Object { $_ -match '(?i)CUDA.*Win.*\.exe$' } | Select-Object -First 1)
-
-          $json = [ordered]@{
-            beta = [ordered]@{
-              tag        = $tag
-              updated_at = (Get-Date -Format "o")
-              files      = [ordered]@{
-                mac_arm64 = if ($macArm64) { $macArm64 } else { $null }
-                win_cpu   = if ($winCpu)   { $winCpu }   else { $null }
-                win_cuda  = if ($winCuda)  { $winCuda }  else { $null }
-              }
-            }
-          }
-          # 保存 JSON 内容，切换到 nightly 分支后写入并推送
-          $jsonContent = $json | ConvertTo-Json -Depth 5
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin nightly
-          git checkout -B nightly origin/nightly
-          $jsonContent | Out-File -Encoding utf8NoBOM "docs/downloads_github.json"
-          git add docs/downloads_github.json
-          git diff --cached --quiet && exit 0
-          git commit -m "chore(web): 自动更新 downloads_github.json → $tag [skip ci]"
-          git push origin HEAD:nightly
 
   build-mac:
     runs-on: macos-14
@@ -214,10 +91,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -232,315 +109,44 @@ jobs:
       - name: Resolve release metadata
         id: release_meta
         env:
-          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            RAW_VERSION="$INPUT_VERSION"
-          else
-            RAW_VERSION="$REF_NAME"
-          fi
-
-          if [ -z "$RAW_VERSION" ]; then
-            echo "Release version is required." >&2
-            exit 1
-          fi
-
-          if [[ "$RAW_VERSION" == v* ]]; then
-            TAG="$RAW_VERSION"
-          else
-            TAG="v$RAW_VERSION"
-          fi
-
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "name=SuperPicky $TAG" >> "$GITHUB_OUTPUT"
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: python scripts/ci_release.py resolve-metadata
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements_mac.txt
+          python -m pip install -r requirements_mac.txt
 
-      - name: Import signing certificate
+      - name: Materialize signing certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        run: python scripts/ci_release.py materialize-secret-file --env-name MACOS_CERTIFICATE --output $RUNNER_TEMP/certificate.p12 --decode-base64
+
+      - name: Build notarized macOS release
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
-          KEYCHAIN_PWD=$(openssl rand -hex 16)
-
-          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-
-          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
-          security import "$RUNNER_TEMP/certificate.p12" \
-            -k "$KEYCHAIN_PATH" \
-            -P "$MACOS_CERTIFICATE_PWD" \
-            -T /usr/bin/codesign
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
-
-          echo "KEYCHAIN_PWD=$KEYCHAIN_PWD" >> "$GITHUB_ENV"
-          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-
-      - name: Download models
-        run: python scripts/download_models.py
-
-      - name: Inject commit hash and run PyInstaller
-        env:
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          COMMIT_HASH=$(git rev-parse --short HEAD)
-          BUILD_INFO_FILE="core/build_info.py"
-
-          # 判断渠道：纯 vX.Y.Z 为 official，含 -RC 为 nightly
-          if echo "$TAG" | grep -iqE '\-rc'; then
-            RELEASE_CHANNEL="nightly"
-          else
-            RELEASE_CHANNEL="official"
-          fi
-
-          cp "$BUILD_INFO_FILE" "${BUILD_INFO_FILE}.backup"
-          sed -i.tmp "s/COMMIT_HASH = .*/COMMIT_HASH = \"${COMMIT_HASH}\"/" "$BUILD_INFO_FILE"
-          sed -i.tmp "s/RELEASE_CHANNEL = .*/RELEASE_CHANNEL = \"${RELEASE_CHANNEL}\"/" "$BUILD_INFO_FILE"
-          rm -f "${BUILD_INFO_FILE}.tmp"
-
-          pyinstaller SuperPicky.spec --clean --noconfirm
-
-          mv "${BUILD_INFO_FILE}.backup" "$BUILD_INFO_FILE"
-
-          echo "COMMIT_HASH=$COMMIT_HASH" >> "$GITHUB_ENV"
-
-      - name: Organize .app bundle resources
-        run: |
-          APP_PATH="dist/SuperPicky.app"
-          mkdir -p "${APP_PATH}/Contents/MacOS" "${APP_PATH}/Contents/Resources"
-
-          if [ -d "dist/SuperPicky" ] && [ ! -f "${APP_PATH}/Contents/MacOS/SuperPicky" ]; then
-            mv dist/SuperPicky/* "${APP_PATH}/Contents/MacOS/"
-          fi
-
-          for res in SuperBirdIDPlugin.lrplugin en.lproj zh-Hans.lproj; do
-            if [ -d "${APP_PATH}/Contents/MacOS/$res" ]; then
-              mv "${APP_PATH}/Contents/MacOS/$res" "${APP_PATH}/Contents/Resources/"
-            fi
-          done
-
-          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
-
-      - name: Sign application
-        env:
-          DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
-        run: |
-          find "${APP_PATH}/Contents" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -print0 | \
-            xargs -0 -P 8 -I {} codesign --force --sign "$DEVELOPER_ID" --timestamp --options runtime {} 2>/dev/null || true
-
-          codesign --force --deep --sign "$DEVELOPER_ID" \
-            --timestamp \
-            --options runtime \
-            --entitlements entitlements.plist \
-            "${APP_PATH}"
-
-          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
-
-      - name: Install create-dmg
-        run: brew install create-dmg
-
-      - name: Create DMG
-        env:
-          DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
-        run: |
-          VERSION=$(python -c "from constants import APP_VERSION; print(APP_VERSION)")
-          DMG_NAME="SuperPicky_v${VERSION}_arm64_${COMMIT_HASH}.dmg"
-          DMG_TEMP="dist/dmg_temp"
-
-          rm -rf "$DMG_TEMP"
-          mkdir -p "$DMG_TEMP"
-
-          cp -R "${APP_PATH}" "${DMG_TEMP}/"
-
-          if [ -d "SuperBirdIDPlugin.lrplugin" ]; then
-            cp -R "SuperBirdIDPlugin.lrplugin" "${DMG_TEMP}/"
-          fi
-
-          # README 安装说明
-          if [ -f "resources/DMG_README.txt" ]; then
-            cp "resources/DMG_README.txt" "${DMG_TEMP}/README.txt"
-          fi
-
-          # 使用 create-dmg 生成带 Applications 图标的标准安装 DMG
-          create-dmg \
-            --volname "SuperPicky ${VERSION}" \
-            --window-pos 200 120 \
-            --window-size 580 380 \
-            --icon-size 100 \
-            --icon "SuperPicky.app" 140 180 \
-            --hide-extension "SuperPicky.app" \
-            --app-drop-link 440 180 \
-            --no-internet-enable \
-            "dist/${DMG_NAME}" \
-            "$DMG_TEMP"
-
-          rm -rf "$DMG_TEMP"
-
-          codesign --force --sign "$DEVELOPER_ID" --timestamp "dist/${DMG_NAME}"
-
-          echo "DMG_PATH=dist/${DMG_NAME}" >> "$GITHUB_ENV"
-
-      - name: Notarize and staple DMG
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
         run: |
-          NOTARIZE_OUTPUT=$(xcrun notarytool submit "${DMG_PATH}" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_PASSWORD" \
-            --team-id "$TEAM_ID" \
-            --wait \
-            --output-format json 2>&1)
-
-          echo "$NOTARIZE_OUTPUT"
-
-          if ! echo "$NOTARIZE_OUTPUT" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"Accepted"'; then
-            echo "Notarization failed." >&2
-            exit 1
-          fi
-
-          xcrun stapler staple "${DMG_PATH}"
-          xcrun stapler validate "${DMG_PATH}"
+          python build_release_mac.py --build-type full --arch arm64 --copy-dir output/mac --sign-p12 $RUNNER_TEMP/certificate.p12 --sign-p12-password-env MACOS_CERTIFICATE_PWD --notarize --apple-id ${{ secrets.APPLE_ID }} --team-id ${{ secrets.MACOS_TEAM_ID }}
 
       - name: Build code patch zip
-        env:
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          VERSION=$(python3 -c "from constants import APP_VERSION; print(APP_VERSION)")
-          PATCH_VERSION="${TAG}"
-          ZIP_NAME="code_patch_${PATCH_VERSION}.zip"
-
-          # 与 Windows CI 保持一致：包含所有运行时 Python 文件
-          # 排除 main.py（PyInstaller 入口，patch 无效）
-          # build_info.py 必须包含：CI 已注入 RELEASE_CHANNEL，patch 覆盖后不影响正确性
-          # 若排除则 code_updates/core/ 遮蔽冻结包导致 ModuleNotFoundError
-          PATCH_ITEMS=(
-            constants.py advanced_config.py ai_model.py
-            birdid_server.py birdid_cli.py iqa_scorer.py
-            post_adjustment_engine.py server_manager.py
-            superpicky_cli.py topiq_model.py
-            tools/ core/ ui/ birdid/ locales/
-          )
-          EXISTING_ITEMS=()
-          for item in "${PATCH_ITEMS[@]}"; do
-            [ -e "$item" ] && EXISTING_ITEMS+=("$item")
-          done
-
-          zip -r "dist/${ZIP_NAME}" "${EXISTING_ITEMS[@]}" \
-            --exclude "**/__pycache__/*" --exclude "**/*.pyc" --exclude "**/*.pyo"
-
-          APPLIED_AT=$(python3 -c "import datetime; print(datetime.datetime.now(datetime.timezone.utc).isoformat())")
-          printf '{"patch_version":"%s","base_version":"%s","applied_at":"%s"}\n' \
-            "$PATCH_VERSION" "$VERSION" "$APPLIED_AT" > dist/patch_meta.json
-
-          echo "PATCH_ZIP=dist/${ZIP_NAME}" >> "$GITHUB_ENV"
-          echo "PATCH_META=dist/patch_meta.json" >> "$GITHUB_ENV"
-
-      - name: Push patch files to mirror server
-        continue-on-error: true
-        env:
-          MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$MIRROR_SSH_KEY" > ~/.ssh/mirror_key
-          chmod 600 ~/.ssh/mirror_key
-
-          VERSION=$(python3 -c "from constants import APP_VERSION; print(APP_VERSION)")
-          PATCH_VERSION="${TAG}"
-          MIRROR_BASE="http://1.119.150.179:59080/superpicky"
-
-          # 生成 latest.json（供中国大陆用户版本查询 fallback）
-          python3 -c "import json,datetime,sys; d={'tag_name':sys.argv[1],'version':sys.argv[2],'published_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'patch_meta_url':sys.argv[3]+'/patch_meta.json','patch_zip_url':sys.argv[3]+'/code_patch_'+sys.argv[4]+'.zip'}; json.dump(d,open('dist/latest.json','w'),indent=2)" "$TAG" "$VERSION" "$MIRROR_BASE" "$PATCH_VERSION"
-
-          # 建立远端目录
-          ssh -i ~/.ssh/mirror_key -p 22 \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            jordan@1.119.150.179 \
-            "mkdir -p /opt/1panel/www/sites/github/index/superpicky"
-
-          # 推送 latest.json、patch_meta.json、code_patch zip
-          scp -i ~/.ssh/mirror_key -P 22 \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            dist/latest.json \
-            "${PATCH_META}" \
-            "${PATCH_ZIP}" \
-            jordan@1.119.150.179:/opt/1panel/www/sites/github/index/superpicky/
-
-          rm -f ~/.ssh/mirror_key
+        run: python scripts/ci_release.py build-patch --output-dir output/mac --patch-version ${{ steps.release_meta.outputs.tag }}
 
       - name: Clean up
         if: always()
-        run: |
-          rm -f _telemetry_build.py
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+        run: python scripts/ci_release.py cleanup-paths --path _telemetry_build.py --path $RUNNER_TEMP/certificate.p12
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           name: ${{ steps.release_meta.outputs.name }}
           body_path: ChangeLog.md
+          fail_on_unmatched_files: true
           files: |
-            ${{ env.DMG_PATH }}
-            ${{ env.PATCH_ZIP }}
-            ${{ env.PATCH_META }}
-
-      - name: Upload patch files to GitCode
-        continue-on-error: true
-        env:
-          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-          TAG: ${{ steps.release_meta.outputs.tag }}
-        run: |
-          BASE_URL="https://gitcode.com/api/v4/projects/Jamesphotography%2FSuperPicky"
-          FILE_BASE="https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release"
-          PATCH_ZIP_NAME=$(basename "${PATCH_ZIP}")
-
-          # 上传三个小文件到 GitCode generic packages（不上传大 DMG，避免 413）
-          for FILE in dist/latest.json "${PATCH_META}" "${PATCH_ZIP}"; do
-            FILENAME=$(basename "$FILE")
-            curl -s --fail -T "$FILE" \
-              --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-              "$BASE_URL/packages/generic/release/$TAG/$FILENAME" || true
-          done
-
-          # 尝试在 GitCode 创建 Release（Windows job 可能已抢先创建，忽略冲突）
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"tag_name\":\"$TAG\",\"name\":\"SuperPicky $TAG\",\"description\":\"See GitHub release for details.\"}" \
-            "$BASE_URL/releases" || true
-
-          # 添加补丁文件 asset links 到 GitCode Release
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"name\":\"patch_meta.json\",\"url\":\"$FILE_BASE/$TAG/patch_meta.json\",\"link_type\":\"package\"}" \
-            "$BASE_URL/releases/$TAG/assets/links" || true
-
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"name\":\"$PATCH_ZIP_NAME\",\"url\":\"$FILE_BASE/$TAG/$PATCH_ZIP_NAME\",\"link_type\":\"package\"}" \
-            "$BASE_URL/releases/$TAG/assets/links" || true
-
-          curl -s \
-            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"name\":\"latest.json\",\"url\":\"$FILE_BASE/$TAG/latest.json\",\"link_type\":\"package\"}" \
-            "$BASE_URL/releases/$TAG/assets/links" || true
+            output/mac/*.dmg
+            output/mac/code_patch_*.zip
+            output/mac/patch_meta.json

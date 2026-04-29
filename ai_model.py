@@ -17,7 +17,9 @@ os.environ['YOLO_VERBOSE'] = 'False'
 
 def load_yolo_model(log_callback=None):
     """加载 YOLO 模型（使用最佳计算设备）"""
-    model_path = config.ai.get_model_path()
+    model_path = os.path.abspath(config.ai.get_model_path())
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"YOLO model file not found: {model_path}")
     model = YOLO(str(model_path))
 
     # 使用统一的设备检测逻辑
