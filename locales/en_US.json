@@ -437,8 +437,10 @@
     "ram_low": "⚠️ Low RAM: {free} GB — model loading may be slow",
     "exiftool_error_title": "ExifTool Unavailable",
     "exiftool_error_msg": "ExifTool could not be started. Star ratings will not be written to EXIF metadata.\n\nError: {error}\n\nPlease reinstall the app or check for file corruption.",
+    "dangerous_dir_title": "Protected Directory",
+    "dangerous_dir_msg": "For safety, this directory cannot be scanned:\n{directory}\n\nReason: {reason}\n\nPlease choose a specific photo directory instead of a system directory, settings directory, or drive root.",
     "no_photos_title": "No Photos Found",
-    "no_photos_msg": "No supported photo files (JPG / RAW / HEIF) found in:\n{directory}",
+    "no_photos_msg": "No supported photo files (JPG / RAW / HEIF) were found in this directory or its subdirectories:\n{directory}",
     "models_still_loading": "⚠️ Models are still loading in background — first photo may process slowly"
   },
   "stats": {

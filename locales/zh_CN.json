@@ -437,8 +437,10 @@
     "ram_low": "⚠️ 可用内存仅 {free} GB，模型加载可能较慢",
     "exiftool_error_title": "ExifTool 不可用",
     "exiftool_error_msg": "无法启动 ExifTool，照片评分将无法写入 EXIF 元数据。\n\n错误信息：{error}\n\n请重新安装应用或检查软件完整性。",
+    "dangerous_dir_title": "目录受保护",
+    "dangerous_dir_msg": "出于安全考虑，不能扫描这个目录：\n{directory}\n\n 原因：{reason}\n\n请选择更具体的照片目录，而不是系统目录、设置目录或磁盘根目录。",
     "no_photos_title": "未找到照片",
-    "no_photos_msg": "目录中没有支持的照片文件（JPG / RAW / HEIF）：\n{directory}",
+    "no_photos_msg": "目录及其子目录中没有支持的照片文件（JPG / RAW / HEIF）：\n{directory}",
     "models_still_loading": "⚠️ 模型仍在后台预加载，处理时首张照片可能稍慢"
   },
   "stats": {
@@ -917,7 +919,7 @@
     "stats_flying": "🔵 飞版: {count}",
     "btn_screenshot": "截图识别",
     "screenshot_hint": "请截图，完成后自动识别...",
-    "click_to_copy": "点击复制鸟名", 
+    "click_to_copy": "点击复制鸟名",
     "stats_focus_precise": "🟢 精焦: {count}",
     "stats_species": "🦜 {count} 种: {names}"
   },

@@ -369,13 +369,13 @@ class WorkerThread(threading.Thread):
         )
 
         # Detect batch mode: check for subdirectories with photos
-        from core.recursive_scanner import scan_recursive, has_photos
-        sub_dirs = scan_recursive(self.dir_path, max_depth=5)
+        from core.recursive_scanner import DEFAULT_SCAN_MAX_DEPTH, scan_directories
+        scan_results = scan_directories(self.dir_path, max_depth=DEFAULT_SCAN_MAX_DEPTH)
+        sub_dirs = [item.path for item in scan_results]
 
         if len(sub_dirs) <= 1:
             # Single directory mode (original behavior)
-            # 若扫描到的实际目录与根目录不同（根目录无图片、子目录有图片），使用实际目录
-            single_dir = sub_dirs[0] if sub_dirs else self.dir_path
+            single_dir = scan_results[0].path if scan_results else self.dir_path
             processor = PhotoProcessor(
                 dir_path=single_dir,
                 settings=settings,
