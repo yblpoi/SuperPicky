@@ -45,6 +45,18 @@ def is_excluded(dirname: str) -> bool:
     return False
 
 
+def _is_nonempty_photo_file(entry: os.DirEntry[str]) -> bool:
+    """判断目录项是否为非空照片文件。"""
+    ext = os.path.splitext(entry.name)[1].lower()
+    if ext not in _PHOTO_EXTENSIONS:
+        return False
+
+    try:
+        return entry.stat(follow_symlinks=False).st_size > 0
+    except OSError:
+        return False
+
+
 def _scan_directory_once(dir_path: str) -> Tuple[int, List[str]]:
     """单次扫描目录，返回直接照片数量与可继续扫描的子目录。"""
     photo_count = 0
@@ -54,8 +66,7 @@ def _scan_directory_once(dir_path: str) -> Tuple[int, List[str]]:
         with os.scandir(dir_path) as entries:
             for entry in entries:
                 if entry.is_file(follow_symlinks=False):
-                    ext = os.path.splitext(entry.name)[1].lower()
-                    if ext in _PHOTO_EXTENSIONS:
+                    if _is_nonempty_photo_file(entry):
                         photo_count += 1
                     continue
 

@@ -604,6 +604,12 @@ class PhotoProcessor:
         heif_dict = {}               # HIF/HEIF 文件暂存
         heif_processed_as_raw = set() # 被当作 RAW 处理的 HIF 前缀
         files_tbr = []
+
+        def _is_nonempty_photo_path(file_path: str) -> bool:
+            try:
+                return os.path.getsize(file_path) > 0
+            except OSError:
+                return False
         
         for filename in os.listdir(self.dir_path):
             if filename.startswith('.'):
@@ -615,6 +621,13 @@ class PhotoProcessor:
 
             # V3.9: 忽略 Windows 系统文件
             if filename.lower() == 'desktop.ini' or filename.lower() == 'thumbs.db':
+                continue
+
+            file_path = os.path.join(self.dir_path, filename)
+            if not _is_nonempty_photo_path(file_path):
+                file_ext = os.path.splitext(filename)[1].lower()
+                if file_ext in RAW_EXTENSIONS or file_ext in JPG_EXTENSIONS or file_ext in HEIF_EXTENSIONS:
+                    self._log(f"⚠️ 跳过 0 字节照片文件: {filename}", "warning")
                 continue
             
             file_prefix, file_ext = os.path.splitext(filename)
