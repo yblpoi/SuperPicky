@@ -117,7 +117,7 @@ ExifTool 二进制文件（macOS 和 Windows）。
 | `SuperPicky.spec` | PyInstaller 打包配置 |
 | `entitlements.plist` | macOS 权限声明 |
 | `create_pkg_dmg_v4.0.0.sh` | PKG/DMG 构建脚本 |
-| `build_release.sh` | 发布构建脚本 |
+| `build_release_mac.py` / `build_release_win.py` | 发布构建主脚本 |
 | `requirements.txt` | Python 依赖 |
 
 ---

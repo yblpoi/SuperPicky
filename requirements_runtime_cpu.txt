@@ -1,0 +1,13 @@
+# Runtime dependencies for the lightweight package CPU initialization flow.
+# Keep this separate from development .venv requirements so packaged first-run
+# install can evolve without disrupting local development.
+
+-r requirements_base.txt
+
+--extra-index-url https://mirror.nju.edu.cn/pytorch/whl/cpu/
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
+torchaudio==2.7.1+cpu
+lap
+huggingface_hub

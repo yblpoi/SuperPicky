@@ -116,13 +116,14 @@ class StyledMessageBox(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
 
-        # 如果有多个按钮，左侧添加弹性空间
+        button_width = 180 if len(buttons) > 1 else 120
+
         if len(buttons) > 1:
             btn_layout.addStretch()
 
         for btn_text, btn_value, btn_style in buttons:
             btn = QPushButton(btn_text)
-            btn.setMinimumWidth(100)
+            btn.setFixedWidth(button_width)
             btn.setMinimumHeight(40)
             btn.setCursor(Qt.PointingHandCursor)
 
@@ -168,6 +169,9 @@ class StyledMessageBox(QDialog):
 
             btn.clicked.connect(lambda checked, v=btn_value: self._on_button_clicked(v))
             btn_layout.addWidget(btn)
+
+        if len(buttons) > 1:
+            btn_layout.addStretch()
 
         layout.addLayout(btn_layout)
 

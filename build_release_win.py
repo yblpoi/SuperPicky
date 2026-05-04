@@ -16,10 +16,12 @@ import argparse
 import ast
 import hashlib
 import logging
+import os
 import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -31,10 +33,12 @@ INNO_DIR = ROOT_DIR / "inno"
 BUILD_INFO_FILE = ROOT_DIR / "core" / "build_info.py"
 DOWNLOAD_MODELS_SCRIPT = ROOT_DIR / "scripts" / "download_models.py"
 SPEC_FILE = ROOT_DIR / "SuperPicky_win64.spec"
+LITE_SPEC_FILE = ROOT_DIR / "SuperPicky_lite_win.spec"
 CPU_VENV_DIR = ROOT_DIR / ".venv"
 CUDA_VENV_DIR = ROOT_DIR / ".venv-cuda"
 DEFAULT_PATCH_OUTPUT_ROOT = ROOT_DIR / "output"
 STANDARD_INNO_TEMPLATE = INNO_DIR / "SuperPicky.iss"
+LITE_INNO_TEMPLATE = INNO_DIR / "SuperPicky-lite.iss"
 PATCH_INNO_TEMPLATE = INNO_DIR / "SuperPicky_CUDA_Patch.iss"
 INNO_LANGUAGE_FILE = INNO_DIR / "ChineseSimplified.isl"
 CPU_REQUIREMENTS_FILE = ROOT_DIR / "requirements.txt"
@@ -42,6 +46,7 @@ CUDA_REQUIREMENTS_FILE = ROOT_DIR / "requirements_cuda.txt"
 PATCH_MANIFEST_RELATIVE_PATH = Path("_internal") / "cuda_patch_manifest.txt"
 CPU_INSTALLER_STAGING_DIRNAME = "installer_cpu"
 CUDA_INSTALLER_STAGING_DIRNAME = "installer_cuda"
+LITE_INSTALLER_STAGING_DIRNAME = "installer_lite"
 CUDA_PATCH_PORTABLE_DIRNAME = "cuda_patch"
 CUDA_PATCH_INSTALLER_STAGING_DIRNAME = "cuda_patch_installer"
 
@@ -68,9 +73,9 @@ class BuildConfig:
 
 def configure_logging(debug: bool) -> None:
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="strict")
+        sys.stdout.reconfigure(encoding="utf-8", errors="strict") # pyright: ignore[reportAttributeAccessIssue]
     if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="strict")
+        sys.stderr.reconfigure(encoding="utf-8", errors="strict") # pyright: ignore[reportAttributeAccessIssue]
 
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
     logger.propagate = False
@@ -90,13 +95,17 @@ def log_step(title: str) -> None:
     logger.info("[========================================]")
 
 
+def log_verbose(message: str, *args) -> None:
+    logger.debug(message, *args)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SuperPicky Windows 构建脚本")
     parser.add_argument(
         "--build-type",
-        choices=["cpu", "cuda", "cuda-patch"],
-        default="cpu",
-        help="构建类型：cpu, cuda, cuda-patch (默认: cpu)",
+        choices=["cpu", "cuda", "cuda-patch", "lite"],
+        default="lite",
+        help="构建类型：cpu, cuda, cuda-patch, lite (默认: lite)",
     )
     parser.add_argument("--version", help="覆盖基础版本号，例如 4.2.0")
     parser.add_argument("--copy-dir", help="复制最终产物的目标目录")
@@ -172,6 +181,7 @@ def load_required_models() -> list[dict[str, str]]:
         {"filename": "cub200_keypoint_resnet50_slim.pth", "dest_dir": "models"},
         {"filename": "avonet.db", "dest_dir": "birdid/data"},
         {"filename": "cfanet_iaa_ava_res50-3cd62bb3.pth", "dest_dir": "models"},
+        {"filename": "yolo11l-seg.pt", "dest_dir": "models"},
     ]
 
     if not DOWNLOAD_MODELS_SCRIPT.exists():
@@ -191,7 +201,7 @@ def load_required_models() -> list[dict[str, str]]:
                 break
         if models is None:
             raise RuntimeError("download_models.py 中未找到 MODELS_TO_DOWNLOAD")
-        logger.info("[成功] 已从 download_models.py 加载模型列表")
+        log_verbose("[成功] 已从 download_models.py 加载模型列表")
         return [{"filename": item["filename"], "dest_dir": item["dest_dir"]} for item in models]
     except BaseException as exc:
         if isinstance(exc, KeyboardInterrupt):
@@ -216,7 +226,7 @@ def ensure_models(python_exe: Path) -> None:
     log_step("步骤 0: 检查并下载模型文件")
     missing = find_missing_models()
     if not missing:
-        logger.info("[成功] 所有模型文件已就绪")
+        log_verbose("[成功] 所有模型文件已就绪")
         return
 
     logger.warning("缺失 %d 个模型文件，开始下载", len(missing))
@@ -231,7 +241,7 @@ def ensure_models(python_exe: Path) -> None:
             logger.error("仍然缺失: %s", path)
         raise RuntimeError("模型下载后仍有缺失")
 
-    logger.info("[成功] 所有模型文件已就绪")
+    log_verbose("[成功] 所有模型文件已就绪")
 
 
 def read_app_version() -> str:
@@ -279,7 +289,7 @@ def inject_build_info(commit_hash: str, release_channel: str = "official") -> Pa
         count=1,
     )
     BUILD_INFO_FILE.write_text(updated, encoding="utf-8")
-    logger.info("[成功] 已写入 COMMIT_HASH=%s RELEASE_CHANNEL=%s", commit_hash, release_channel)
+    log_verbose("[成功] 已写入 COMMIT_HASH=%s RELEASE_CHANNEL=%s", commit_hash, release_channel)
     return backup_path
 
 
@@ -288,16 +298,24 @@ def restore_build_info(backup_path: Path | None) -> None:
         shutil.move(str(backup_path), str(BUILD_INFO_FILE))
 
 
-def ensure_spec_file() -> None:
-    if not SPEC_FILE.exists():
-        raise FileNotFoundError(f"缺少 spec 文件: {SPEC_FILE}")
+def spec_file_for(build_type: str) -> Path:
+    if build_type == "lite":
+        return LITE_SPEC_FILE
+    return SPEC_FILE
+
+
+def ensure_spec_file(build_type: str) -> None:
+    spec_file = spec_file_for(build_type)
+    if not spec_file.exists():
+        raise FileNotFoundError(f"缺少 spec 文件: {spec_file}")
+    log_verbose("[信息] %s 构建将使用 spec: %s", build_type, spec_file.name)
 
 
 def check_python_environment(python_exe: Path, label: str) -> None:
-    logger.info("[信息] 检查 Python 环境 (%s): %s", label, python_exe)
+    log_verbose("[信息] 检查 Python 环境 (%s): %s", label, python_exe)
     run_command([str(python_exe), "-c", "import sys; print(sys.executable)"], label=f"{label} Python 检查")
     run_command([str(python_exe), "-c", "import PyInstaller"], label=f"{label} PyInstaller 检查")
-    logger.info("[成功] %s 环境可用", label)
+    log_verbose("[成功] %s 环境可用", label)
 
 
 def python_in_venv(venv_dir: Path) -> Path:
@@ -315,7 +333,7 @@ def ensure_virtual_environment(
     venv_python = python_in_venv(venv_dir)
 
     if not venv_python.exists():
-        logger.info("[信息] 创建 %s 虚拟环境: %s", label, venv_dir)
+        logger.info("创建 %s 虚拟环境...", label)
         run_command([str(bootstrap_python), "-m", "venv", str(venv_dir)], label=f"创建 {label} 虚拟环境")
 
     run_command([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], label=f"升级 {label} 环境 pip")
@@ -348,99 +366,126 @@ def ensure_cuda_environment(bootstrap_python: Path) -> Path:
 
 def clean_build_outputs() -> None:
     log_step("步骤 2: 清理旧的构建目录")
-    for label in ("cpu", "cuda", "cuda_patch"):
+    for label in ("cpu", "cuda", "cuda_patch", "lite"):
         paths = get_build_paths(label)
         remove_path(paths.work_dir)
         remove_path(paths.dist_dir)
     remove_path(ROOT_DIR / "build_dist")
     remove_path(ROOT_DIR / "dist")
-    logger.info("[成功] 已清理构建目录")
+    log_verbose("[成功] 已清理构建目录")
 
 
-def build_bundle(python_exe: Path, build_paths: BuildPaths) -> None:
+def build_bundle(python_exe: Path, build_paths: BuildPaths, spec_file: Path) -> None:
     log_step(f"步骤 3: 构建 {build_paths.label.upper()} 版本")
     remove_path(build_paths.work_dir)
     remove_path(build_paths.dist_dir)
 
+    pyinstaller_command = [
+        str(python_exe),
+        "-m",
+        "PyInstaller",
+        str(spec_file),
+        "--clean",
+        "--noconfirm",
+        f"--workpath={build_paths.work_dir}",
+        f"--distpath={build_paths.dist_dir}",
+    ]
+    logger.info("启动 PyInstaller 构建：开始")
+    logger.info("PyInstaller 参数：%s", " ".join(str(item) for item in pyinstaller_command[2:]))
     run_command(
-        [
-            str(python_exe),
-            "-m",
-            "PyInstaller",
-            str(SPEC_FILE),
-            "--clean",
-            "--noconfirm",
-            f"--workpath={build_paths.work_dir}",
-            f"--distpath={build_paths.dist_dir}",
-        ],
+        pyinstaller_command,
+        capture_output=not logger.isEnabledFor(logging.DEBUG),
         label=f"{build_paths.label} PyInstaller 构建",
     )
 
     exe_path = build_paths.bundle_dir / f"{APP_NAME}.exe"
     if not exe_path.exists():
         raise FileNotFoundError(f"构建完成后未找到可执行文件: {exe_path}")
-    logger.info("[成功] %s 构建完成", build_paths.label.upper())
-
-
-def find_7z_executable() -> str:
-    candidates = [
-        shutil.which("7z"),
-        shutil.which("7zz"),
-        shutil.which("7za"),
-        str(Path("C:/Program Files/7-Zip/7z.exe")),
-        str(Path("C:/Program Files (x86)/7-Zip/7z.exe")),
-    ]
-    for candidate in candidates:
-        if not candidate:
-            continue
-        if Path(candidate).exists():
-            return candidate
-    raise FileNotFoundError("未找到 7z 可执行文件，请先安装 7-Zip 或确保 7z/7zz/7za 已加入 PATH")
+    logger.info("PyInstaller 构建成功！")
+    logger.info("构建产物位置：%s", exe_path)
+    log_verbose("[成功] %s 构建完成", build_paths.label.upper())
 
 
 def create_zip_archive(source_dir: Path, archive_path: Path) -> None:
+    """
+    使用标准库创建 ZIP 包 / Create ZIP archives with the Python standard library.
+    """
+
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     archive_path.unlink(missing_ok=True)
-    seven_zip = find_7z_executable()
-    run_command(
-        [
-            seven_zip,
-            "a",
-            "-tzip",
-            "-mx=9",
-            "-mm=LZMA",
-            "-md=256m",
-            "-mfb=128",
-            "-mmt=on",
-            str(archive_path),
-            source_dir.name,
-        ],
-        cwd=source_dir.parent,
-        label="ZIP 压缩",
-    )
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for file_path in sorted(source_dir.rglob("*")):
+            if file_path.is_dir():
+                continue
+            archive.write(file_path, arcname=str(Path(source_dir.name) / file_path.relative_to(source_dir)))
 
 
 def archive_name_for(label: str, app_version: str, commit_hash: str) -> str:
     return f"{APP_NAME}_Win64_{app_version}_{commit_hash}_{label}.zip"
 
 
-def update_inno_content(content: str, *, app_version: str, commit_hash: str, patch: bool) -> str:
-    version_value = f"{app_version}-{commit_hash}"
-    if patch:
-        output_base = f"SuperPicky_CUDA_Patch_Win64_{app_version}_{commit_hash}"
-    else:
-        output_base = f"SuperPicky_Setup_Win64_{app_version}_{commit_hash}"
+def normalize_version(version: str) -> str:
+    """确保版本号以 'v' 前缀开头。
 
-    content = re.sub(r"(?m)^AppVersion=.*$", f"AppVersion={version_value}", content)
-    content = re.sub(r"(?m)^OutputBaseFilename=.*$", f"OutputBaseFilename={output_base}", content)
+    Ensure version string starts with 'v' prefix.
+
+    参数 / Parameters:
+        version (str): 原始版本号，例如 "4.2.0" 或 "v4.2.0"
+
+    返回 / Return:
+        str: 带 'v' 前缀的版本号，例如 "v4.2.0"
+    """
+    return version if version.startswith("v") else f"v{version}"
+
+
+def update_inno_content(content: str, *, app_version: str, commit_hash: str) -> str:
+    """替换 ISS 模板中的 #define 预处理器变量，注入版本号和提交哈希。
+
+    Replace #define preprocessor variables in ISS template with version and commit hash.
+
+    参数 / Parameters:
+        content (str): ISS 模板原始内容
+        app_version (str): 应用版本号（将自动添加 'v' 前缀）
+        commit_hash (str): Git 提交哈希
+
+    返回 / Return:
+        str: 替换后的 ISS 内容
+    """
+    versioned = normalize_version(app_version)
+    content = re.sub(
+        r'(?m)^(#define\s+MyAppVersion\s+").*?(")\s*$',
+        rf'\g<1>{versioned}\2',
+        content,
+    )
+    content = re.sub(
+        r'(?m)^(#define\s+MyAppCommitHash\s+").*?(")\s*$',
+        rf'\g<1>{commit_hash}\2',
+        content,
+    )
     return content
 
 
-def write_inno_script(template_path: Path, destination_path: Path, *, app_version: str, commit_hash: str, patch: bool) -> None:
+def write_inno_script(
+    template_path: Path,
+    destination_path: Path,
+    *,
+    app_version: str,
+    commit_hash: str,
+) -> None:
+    """读取 ISS 模板，注入版本号和哈希后写入目标路径。
+
+    Read ISS template, inject version and hash, write to destination.
+
+    参数 / Parameters:
+        template_path (Path): ISS 模板文件路径
+        destination_path (Path): 输出 ISS 文件路径
+        app_version (str): 应用版本号
+        commit_hash (str): Git 提交哈希
+    """
     content = template_path.read_text(encoding="utf-8")
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     destination_path.write_text(
-        update_inno_content(content, app_version=app_version, commit_hash=commit_hash, patch=patch),
+        update_inno_content(content, app_version=app_version, commit_hash=commit_hash),
         encoding="utf-8",
     )
 
@@ -450,22 +495,55 @@ def installer_staging_dir_name(label: str) -> str:
         return CPU_INSTALLER_STAGING_DIRNAME
     if label == "cuda":
         return CUDA_INSTALLER_STAGING_DIRNAME
+    if label == "lite":
+        return LITE_INSTALLER_STAGING_DIRNAME
     raise ValueError(f"不支持的标准安装包标签: {label}")
 
 
+def inno_template_for(label: str) -> Path:
+    """根据构建标签返回对应的 ISS 模板路径。
+
+    Return the ISS template path for the given build label.
+
+    参数 / Parameters:
+        label (str): 构建标签，"lite" 或其他（Full/CPU/CUDA）
+
+    返回 / Return:
+        Path: ISS 模板文件路径
+    """
+    if label == "lite":
+        return LITE_INNO_TEMPLATE
+    return STANDARD_INNO_TEMPLATE
+
+
 def prepare_standard_installer_staging(source_bundle_dir: Path, staging_root: Path, config: BuildConfig, *, label: str) -> Path:
+    """准备标准安装包的 staging 目录，包含构建产物、ISS 脚本和依赖资源。
+
+    Prepare standard installer staging directory with build artifacts, ISS script and dependencies.
+
+    参数 / Parameters:
+        source_bundle_dir (Path): PyInstaller 构建产物目录
+        staging_root (Path): staging 根目录
+        config (BuildConfig): 构建配置
+        label (str): 构建标签（"cpu", "cuda", "lite"）
+
+    返回 / Return:
+        Path: 生成的 ISS 脚本路径
+    """
     staging_dir = staging_root / installer_staging_dir_name(label)
     copy_tree(source_bundle_dir, staging_dir)
+    template = inno_template_for(label)
+    iss_filename = template.name
     write_inno_script(
-        STANDARD_INNO_TEMPLATE,
-        staging_dir / "SuperPicky.iss",
+        template,
+        staging_dir / iss_filename,
         app_version=config.app_version,
         commit_hash=config.commit_hash,
-        patch=False,
     )
     copy_file(INNO_LANGUAGE_FILE, staging_dir / INNO_LANGUAGE_FILE.name)
-    logger.info("[成功] 已准备标准安装包脚本目录: %s", staging_dir)
-    return staging_dir / "SuperPicky.iss"
+    copy_tree(ROOT_DIR / "img", staging_dir / "img")
+    log_verbose("[成功] 已准备标准安装包脚本目录: %s", staging_dir)
+    return staging_dir / iss_filename
 
 
 def publish_standard_build(
@@ -489,12 +567,12 @@ def publish_standard_build(
     if not config.no_zip:
         zip_path = artifact_root / archive_name_for(label, config.app_version, config.commit_hash)
         create_zip_archive(zip_source_dir, zip_path)
-        logger.info("[成功] 已创建 ZIP 压缩包: %s", zip_path)
+        log_verbose("[成功] 已创建 ZIP 压缩包: %s", zip_path)
     else:
         zip_path = None
-        logger.info("[信息] 跳过 ZIP 压缩包创建 (--no-zip)")
+        log_verbose("[信息] 跳过 ZIP 压缩包创建 (--no-zip)")
 
-    logger.info("[成功] 已准备目录: %s", final_bundle_dir)
+    log_verbose("[成功] 已准备目录: %s", final_bundle_dir)
     return final_bundle_dir, zip_path, installer_script_path
 
 
@@ -555,9 +633,9 @@ def prepare_patch_directory(cpu_bundle: Path, cuda_bundle: Path, config: BuildCo
             shutil.copy2(cuda_file, destination)
 
     manifest_path = write_patch_manifest(patch_dir, copied_patch_files)
-    logger.info("[成功] 已导出差异文件: %d 个不同文件, %d 个 CUDA 独有文件", different_count, cuda_only_count)
-    logger.info("[成功] 已写入补丁清单: %s", manifest_path)
-    logger.info("[成功] 补丁目录: %s", patch_dir)
+    log_verbose("[成功] 已导出差异文件: %d 个不同文件, %d 个 CUDA 独有文件", different_count, cuda_only_count)
+    log_verbose("[成功] 已写入补丁清单: %s", manifest_path)
+    log_verbose("[成功] 补丁目录: %s", patch_dir)
     return patch_dir
 
 
@@ -572,14 +650,17 @@ def prepare_patch_installer_staging(portable_patch_dir: Path, config: BuildConfi
         staging_dir / PATCH_INNO_TEMPLATE.name,
         app_version=config.app_version,
         commit_hash=config.commit_hash,
-        patch=True,
     )
-    logger.info("[成功] 已准备 CUDA 补丁安装包脚本目录: %s", staging_dir)
+    log_verbose("[成功] 已准备 CUDA 补丁安装包脚本目录: %s", staging_dir)
     return staging_dir / PATCH_INNO_TEMPLATE.name
 
 
 def ensure_inno_templates() -> None:
-    for path in (STANDARD_INNO_TEMPLATE, PATCH_INNO_TEMPLATE, INNO_LANGUAGE_FILE):
+    """检查所有 Inno Setup 模板和依赖文件是否存在。
+
+    Verify all Inno Setup templates and dependency files exist.
+    """
+    for path in (STANDARD_INNO_TEMPLATE, LITE_INNO_TEMPLATE, PATCH_INNO_TEMPLATE, INNO_LANGUAGE_FILE):
         if not path.exists():
             raise FileNotFoundError(f"缺少 Inno 相关文件: {path}")
 
@@ -593,7 +674,7 @@ def resolve_final_root(build_type: str, copy_dir: Path | None) -> Path | None:
 def build_single_target(config: BuildConfig, label: str, python_exe: Path) -> tuple[BuildPaths, Path, Path | None, Path]:
     check_python_environment(python_exe, label.upper())
     build_paths = get_build_paths(label)
-    build_bundle(python_exe, build_paths)
+    build_bundle(python_exe, build_paths, spec_file_for(label if label == "lite" else config.build_type))
     final_root = resolve_final_root(config.build_type, config.copy_dir)
     final_bundle, zip_path, installer_script_path = publish_standard_build(
         label=label,
@@ -623,6 +704,20 @@ def run_cpu_or_cuda_build(config: BuildConfig) -> None:
     logger.info("安装包脚本: %s", installer_script_path)
 
 
+def run_lite_build(config: BuildConfig) -> None:
+    bootstrap_python = Path(sys.executable)
+    build_python = ensure_cpu_environment(bootstrap_python)
+
+    clean_build_outputs()
+    _, final_bundle, zip_path, installer_script_path = build_single_target(config, "lite", build_python)
+    logger.info("[========================================]")
+    logger.info("Lite 构建完成")
+    logger.info("[========================================]")
+    logger.info("可执行文件: %s", final_bundle / f"{APP_NAME}.exe")
+    logger.info("压缩文件: %s", zip_path if zip_path else "(已跳过)")
+    logger.info("安装包脚本: %s", installer_script_path)
+
+
 def run_cuda_patch_build(config: BuildConfig) -> None:
     bootstrap_python = Path(sys.executable)
     cpu_python = ensure_cpu_environment(bootstrap_python)
@@ -633,7 +728,7 @@ def run_cuda_patch_build(config: BuildConfig) -> None:
 
     cuda_python = ensure_cuda_environment(bootstrap_python)
     cuda_paths = get_build_paths("cuda")
-    build_bundle(cuda_python, cuda_paths)
+    build_bundle(cuda_python, cuda_paths, spec_file_for("cuda"))
 
     patch_dir = prepare_patch_directory(cpu_paths.bundle_dir, cuda_paths.bundle_dir, config)
     patch_installer_script = prepare_patch_installer_staging(patch_dir, config)
@@ -644,15 +739,15 @@ def run_cuda_patch_build(config: BuildConfig) -> None:
             config.commit_hash,
         )
         create_zip_archive(patch_dir, patch_zip)
-        logger.info("[成功] 已创建 CUDA 补丁 ZIP 压缩包: %s", patch_zip)
+        log_verbose("[成功] 已创建 CUDA 补丁 ZIP 压缩包: %s", patch_zip)
     else:
         patch_zip = None
-        logger.info("[信息] 跳过 CUDA 补丁 ZIP 压缩包创建 (--no-zip)")
+        log_verbose("[信息] 跳过 CUDA 补丁 ZIP 压缩包创建 (--no-zip)")
 
     log_step("步骤 7: 清理 CUDA 中间产物")
     remove_path(cuda_paths.work_dir)
     remove_path(cuda_paths.dist_dir)
-    logger.info("[成功] 已清理 CUDA 中间目录")
+    log_verbose("[成功] 已清理 CUDA 中间目录")
 
     logger.info("[========================================]")
     logger.info("CUDA Patch 构建完成")
@@ -666,12 +761,23 @@ def run_cuda_patch_build(config: BuildConfig) -> None:
 
 
 def create_config(args: argparse.Namespace) -> BuildConfig:
+    """根据命令行参数创建构建配置。版本号自动添加 'v' 前缀。
+
+    Create build config from CLI arguments. Version is auto-prefixed with 'v'.
+
+    参数 / Parameters:
+        args (argparse.Namespace): 解析后的命令行参数
+
+    返回 / Return:
+        BuildConfig: 构建配置对象
+    """
+    raw_version = args.version or read_app_version()
     return BuildConfig(
         build_type=args.build_type,
         copy_dir=Path(args.copy_dir).resolve() if args.copy_dir else None,
         no_zip=args.no_zip,
         debug=args.debug,
-        app_version=args.version or read_app_version(),
+        app_version=normalize_version(raw_version),
         commit_hash=get_commit_hash(),
     )
 
@@ -681,16 +787,17 @@ def main() -> None:
     configure_logging(args.debug)
 
     config = create_config(args)
-    ensure_spec_file()
+    ensure_spec_file(config.build_type)
     ensure_inno_templates()
 
-    import os as _os
-    _tag = _os.environ.get("RELEASE_TAG", "")
-    _channel = "nightly" if _tag and "-rc" in _tag.lower() else "official"
-    backup_path = inject_build_info(config.commit_hash, _channel)
+    release_tag = os.environ.get("RELEASE_TAG", "")
+    release_channel = "nightly" if release_tag and "-rc" in release_tag.lower() else "official"
+    backup_path = inject_build_info(config.commit_hash, release_channel)
     try:
         if config.build_type == "cuda-patch":
             run_cuda_patch_build(config)
+        elif config.build_type == "lite":
+            run_lite_build(config)
         else:
             run_cpu_or_cuda_build(config)
     finally:

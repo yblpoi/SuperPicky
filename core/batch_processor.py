@@ -9,10 +9,10 @@
 import os
 import json
 import time
-from typing import List, Dict, Optional, Callable
+from typing import Callable, Dict, List, Optional, Sequence, Union
 from dataclasses import dataclass, field
 
-from core.recursive_scanner import scan_recursive, is_processed, count_photos
+from core.recursive_scanner import DEFAULT_SCAN_MAX_DEPTH, ScannedDirectory, count_photos, is_processed, scan_directories
 
 
 @dataclass
@@ -39,7 +39,7 @@ class BatchProcessor:
         root_dir: str,
         settings,  # ProcessingSettings
         skip_existing: bool = False,
-        max_depth: int = 10,
+        max_depth: int = DEFAULT_SCAN_MAX_DEPTH,
         log_fn: Optional[Callable[[str], None]] = None,
     ):
         self.root_dir = os.path.abspath(root_dir)
@@ -48,13 +48,13 @@ class BatchProcessor:
         self.max_depth = max_depth
         self.log = log_fn or print
     
-    def scan(self) -> List[str]:
-        """扫描并返回待处理的原子目录列表"""
-        return scan_recursive(self.root_dir, self.max_depth)
+    def scan(self) -> List[ScannedDirectory]:
+        """扫描并返回待处理的原子目录摘要列表"""
+        return scan_directories(self.root_dir, self.max_depth)
     
     def process(
         self,
-        dirs: List[str],
+        dirs: Sequence[Union[str, ScannedDirectory]],
         organize_files: bool = True,
         cleanup_temp: bool = True,
     ) -> BatchResult:
@@ -71,16 +71,30 @@ class BatchProcessor:
         """
         from core.photo_processor import PhotoProcessor, ProcessingCallbacks
         
-        result = BatchResult(total_dirs=len(dirs))
+        normalized_dirs: List[ScannedDirectory] = []
+        for entry in dirs:
+            if isinstance(entry, ScannedDirectory):
+                normalized_dirs.append(entry)
+                continue
+            normalized_dirs.append(
+                ScannedDirectory(
+                    path=entry,
+                    depth=-1,
+                    photo_count=count_photos(entry),
+                )
+            )
+
+        result = BatchResult(total_dirs=len(normalized_dirs))
         batch_start = time.time()
         
-        for i, dir_path in enumerate(dirs, 1):
+        for i, scanned_dir in enumerate(normalized_dirs, 1):
+            dir_path = scanned_dir.path
             dir_name = os.path.relpath(dir_path, self.root_dir)
-            photo_count = count_photos(dir_path)
+            photo_count = scanned_dir.photo_count
             
             # 增量跳过
             if self.skip_existing and is_processed(dir_path):
-                self.log(f"\n⏭️  [{i}/{len(dirs)}] 跳过已处理: {dir_name} ({photo_count} 张)")
+                self.log(f"\n⏭️  [{i}/{len(normalized_dirs)}] 跳过已处理: {dir_name} ({photo_count} 张)")
                 result.skipped_dirs += 1
                 result.dir_results.append({
                     'dir': dir_name,
@@ -90,7 +104,7 @@ class BatchProcessor:
                 continue
             
             self.log(f"\n{'━' * 60}")
-            self.log(f"📂 [{i}/{len(dirs)}] 处理: {dir_name} ({photo_count} 张)")
+            self.log(f"📂 [{i}/{len(normalized_dirs)}] 处理: {dir_name} ({photo_count} 张)")
             self.log(f"{'━' * 60}")
             
             dir_start = time.time()

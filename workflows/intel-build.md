@@ -31,10 +31,10 @@ rm -rf build/ dist/
 ### 步骤 2: 运行打包脚本
 ```bash
 # 开发测试 (不公证，快速打包)
-./build_release.sh
+python3 build_release_mac.py --build-type full --arch x86_64
 
 # 正式发布 (签名+公证)
-./build_release.sh --release
+python3 build_release_mac.py --build-type full --arch x86_64 --notarize --sign-p12 /path/to/certificate.p12 --sign-p12-password-env MACOS_CERTIFICATE_PWD --apple-id "your@email.com" --team-id "YOUR_TEAM_ID"
 ```
 
 ## 常见问题处理

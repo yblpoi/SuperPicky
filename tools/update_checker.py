@@ -71,6 +71,13 @@ def get_version_channel(ver: str) -> str:
     return 'dev'
 
 
+def _mark_patch_check_skipped(update_info: Dict, reason: str) -> None:
+    """在更新结果中标记补丁检查被安全跳过。"""
+    update_info['patch_applied'] = False
+    update_info['patch_skipped'] = True
+    update_info['patch_message'] = reason
+
+
 class UpdateChecker:
     """更新检测器"""
 
@@ -206,17 +213,25 @@ class UpdateChecker:
             # 没有整包更新时，检查是否有补丁
             if not has_update:
                 try:
-                    from tools.patch_manager import check_and_apply_patch
-                    patched, msg = check_and_apply_patch(
-                        data.get('assets', []),
-                        self.current_version,
+                    from tools.patch_manager import (
+                        check_and_apply_patch,
+                        get_patch_runtime_block_reason,
                     )
-                    update_info['patch_applied'] = patched
-                    update_info['patch_message'] = msg
-                    if patched:
-                        from tools.patch_manager import read_local_meta
-                        meta = read_local_meta()
-                        update_info['patch_version'] = meta.get('patch_version') if meta else None
+
+                    blocked_reason = get_patch_runtime_block_reason()
+                    if blocked_reason:
+                        _mark_patch_check_skipped(update_info, blocked_reason)
+                    else:
+                        patched, msg = check_and_apply_patch(
+                            data.get('assets', []),
+                            self.current_version,
+                        )
+                        update_info['patch_applied'] = patched
+                        update_info['patch_message'] = msg
+                        if patched:
+                            from tools.patch_manager import read_local_meta
+                            meta = read_local_meta()
+                            update_info['patch_version'] = meta.get('patch_version') if meta else None
                 except Exception as e:
                     update_info['patch_message'] = f'补丁检查异常: {e}'
 
@@ -280,14 +295,22 @@ class UpdateChecker:
 
         if not has_update:
             try:
-                from tools.patch_manager import check_and_apply_patch_from_gitcode
-                patched, msg = check_and_apply_patch_from_gitcode(gitcode_links, self.current_version)
-                update_info['patch_applied'] = patched
-                update_info['patch_message'] = msg
-                if patched:
-                    from tools.patch_manager import read_local_meta
-                    meta = read_local_meta()
-                    update_info['patch_version'] = meta.get('patch_version') if meta else None
+                from tools.patch_manager import (
+                    check_and_apply_patch_from_gitcode,
+                    get_patch_runtime_block_reason,
+                )
+
+                blocked_reason = get_patch_runtime_block_reason()
+                if blocked_reason:
+                    _mark_patch_check_skipped(update_info, blocked_reason)
+                else:
+                    patched, msg = check_and_apply_patch_from_gitcode(gitcode_links, self.current_version)
+                    update_info['patch_applied'] = patched
+                    update_info['patch_message'] = msg
+                    if patched:
+                        from tools.patch_manager import read_local_meta
+                        meta = read_local_meta()
+                        update_info['patch_version'] = meta.get('patch_version') if meta else None
             except Exception as e:
                 update_info['patch_message'] = f'GitCode 补丁检查异常: {e}'
 
@@ -338,14 +361,22 @@ class UpdateChecker:
 
         if not has_update:
             try:
-                from tools.patch_manager import check_and_apply_patch_from_mirror
-                patched, msg = check_and_apply_patch_from_mirror(self.current_version)
-                update_info['patch_applied'] = patched
-                update_info['patch_message'] = msg
-                if patched:
-                    from tools.patch_manager import read_local_meta
-                    meta = read_local_meta()
-                    update_info['patch_version'] = meta.get('patch_version') if meta else None
+                from tools.patch_manager import (
+                    check_and_apply_patch_from_mirror,
+                    get_patch_runtime_block_reason,
+                )
+
+                blocked_reason = get_patch_runtime_block_reason()
+                if blocked_reason:
+                    _mark_patch_check_skipped(update_info, blocked_reason)
+                else:
+                    patched, msg = check_and_apply_patch_from_mirror(self.current_version)
+                    update_info['patch_applied'] = patched
+                    update_info['patch_message'] = msg
+                    if patched:
+                        from tools.patch_manager import read_local_meta
+                        meta = read_local_meta()
+                        update_info['patch_version'] = meta.get('patch_version') if meta else None
             except Exception as e:
                 update_info['patch_message'] = f'镜像补丁检查异常: {e}'
 

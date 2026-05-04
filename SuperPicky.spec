@@ -5,6 +5,14 @@ import sys
 sys.path.append(os.path.abspath('.'))
 from constants import APP_VERSION
 
+
+def _env_or_none(name):
+    value = os.environ.get(name, "").strip()
+    return value or None
+
+
+APP_VERSION = os.environ.get("SUPERPICKY_APP_VERSION", APP_VERSION)
+
 # 获取当前工作目录
 base_path = os.path.abspath('.')
 
@@ -161,9 +169,9 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
+    target_arch=_env_or_none("SUPERPICKY_TARGET_ARCH"),
+    codesign_identity=_env_or_none("SUPERPICKY_CODESIGN_IDENTITY"),
+    entitlements_file=_env_or_none("SUPERPICKY_ENTITLEMENTS_FILE"),
     icon=os.path.join(base_path, 'img', 'SuperPicky-V0.02.icns') if os.path.exists(os.path.join(base_path, 'img', 'SuperPicky-V0.02.icns')) else None,
 )
 
