@@ -683,6 +683,28 @@ def prepare_signing(config: BuildConfig) -> SigningContext | None:
 
     run_command(["security", "create-keychain", "-p", keychain_password, str(keychain_path)], label="创建临时 keychain")
     run_command(["security", "set-keychain-settings", "-lut", "21600", str(keychain_path)], label="配置 keychain")
+
+    # 把临时 keychain 加入 user 域 search list，否则 codesign 在签名时找不到 identity。
+    # macOS Security framework 不会主动搜索任意 keychain，`--keychain` 标志只限制查询范围、
+    # 不会把目标 keychain 自动加入搜索列表，结果是 codesign 报 "The specified item could not
+    # be found in the keychain." 即使 `find-identity` 在同一 keychain 里能找到证书。
+    # Add the temp keychain to the user-domain search list so codesign can resolve the
+    # signing identity. The macOS Security framework does not search arbitrary keychains
+    # implicitly; the `--keychain` flag only narrows the lookup, it does not add the
+    # keychain to the search list. Without this step codesign fails with "The specified
+    # item could not be found in the keychain." even though `find-identity` can locate
+    # the cert when given the keychain path explicitly.
+    existing_keychains_output = run_command(
+        ["security", "list-keychains", "-d", "user"],
+        capture_output=True,
+        label="读取 keychain 搜索列表",
+    ).stdout
+    preexisting_keychains = re.findall(r'"([^"]+)"', existing_keychains_output)
+    run_command(
+        ["security", "list-keychains", "-d", "user", "-s", str(keychain_path), *preexisting_keychains],
+        label="将临时 keychain 加入搜索列表",
+    )
+
     run_command(["security", "unlock-keychain", "-p", keychain_password, str(keychain_path)], label="解锁 keychain")
     run_command(
         [
