@@ -138,9 +138,14 @@ MODELS_TO_DOWNLOAD = [
         "sha256": None,
     },
     {
+        # yolo11l-seg.pt 不在 jamesphotography/SuperPicky-models 中（该 repo 只放 .onnx 权重），
+        # 改用 Ultralytics 官方公开仓库 Ultralytics/YOLO11，其中含完整 .pt 文件。
+        # yolo11l-seg.pt is not hosted in jamesphotography/SuperPicky-models (that repo
+        # only ships .onnx weights), so we point at Ultralytics' official public HF repo
+        # Ultralytics/YOLO11 which provides the .pt file.
         "resource_id": "yolo_segmentation",
         "category": "Segmentation",
-        "repo_id": "jamesphotography/SuperPicky-models",
+        "repo_id": "Ultralytics/YOLO11",
         "filename": "yolo11l-seg.pt",
         "dest_dir": "models",
         "packaged_dest_dir": "models",
