@@ -1,0 +1,18 @@
+{
+  "version": "13.55",
+  "source": "https://exiftool.org/",
+  "release_type": "production",
+  "synced_at": "2026-05-10T09:28:54+00:00",
+  "assets": [
+    {
+      "name": "perl_distribution",
+      "url": "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.55.tar.gz/download",
+      "sha256": "5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667"
+    },
+    {
+      "name": "windows_64_executable",
+      "url": "https://sourceforge.net/projects/exiftool/files/exiftool-13.55_64.zip/download",
+      "sha256": "9fadaf5221dcb07a5d018e21c8529e257917d2fad1fdfc8e64855c4fb73293df"
+    }
+  ]
+}
