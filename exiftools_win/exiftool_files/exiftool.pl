@@ -11,7 +11,7 @@ use strict;
 use warnings;
 require 5.004;
 
-my $version = '13.51';
+my $version = '13.55';
 
 $^W = 1;    # enable global warnings
 
@@ -193,6 +193,7 @@ my $progressIncr;   # increment for progress counter
 my $progressMax;    # total number of files to process
 my $progressNext;   # next progress count to output
 my $progStr;        # progress message string
+my $purge;          # flag to purge memory
 my $quiet;          # flag to disable printing of informational messages / warnings
 my $rafStdin;       # File::RandomAccess for stdin (if necessary to rewind)
 my $recurse;        # recurse into subdirectories (2=also hidden directories)
@@ -299,6 +300,7 @@ my @recommends = qw(
     POSIX::strptime
     Time::Local
     Unicode::LineBreak
+    File::StatX
     Compress::Raw::Lzma
     IO::Compress::RawDeflate
     IO::Uncompress::RawInflate
@@ -533,6 +535,7 @@ undef $progressCount;
 undef $progressIncr;
 undef $progressMax;
 undef $progressNext;
+undef $purge;
 undef $rafStdin;
 undef $recurse;
 undef $scanWritable;
@@ -803,6 +806,7 @@ for (;;) {
             print "Optional libraries:\n";
             foreach (@recommends) {
                 next if /^Win32/ and $^O ne 'MSWin32';
+                next if /StatX/ and $^O ne 'linux';
                 my $ver = eval "require $_ and \$${_}::VERSION";
                 my $alt = $altRecommends{$_};
                 # check for alternative if primary not available
@@ -888,6 +892,11 @@ for (;;) {
             $val = undef unless $opt =~ s/\^$// or length $val;
             $mt->Options($opt => $val);
         } else {
+            unless ($pass) {
+                push @nextPass, '-api';
+                push @nextPass, $opt if defined $opt;
+                next;
+            }
             print "Available API Options:\n";
             my $availableOptions = Image::ExifTool::AvailableOptions();
             $$_[3] or printf("  %-17s - %s\n", $$_[0], $$_[2]) foreach @$availableOptions;
@@ -910,7 +919,11 @@ for (;;) {
     if ($a eq 'charset') {
         my $charset = (@ARGV and $ARGV[0] !~ /^(-|\xe2\x88\x92)/) ? shift : undef;
         if (not $charset) {
-            $pass or push(@nextPass, '-charset'), next;
+            unless ($pass) {
+                push @nextPass, '-charset' ;
+                push @nextPass, $charset if defined $charset;
+                next;
+            }
             my %charsets;
             $charsets{$_} = 1 foreach values %Image::ExifTool::charsetName;
             PrintTagList('Available character sets', sort keys %charsets);
@@ -1152,8 +1165,10 @@ for (;;) {
             $langOpt =~ tr/-A-Z/_a-z/;
             $mt->Options(Lang => $langOpt);
             next if $langOpt eq $mt->Options('Lang');
-        } else {
-            $pass or push(@nextPass, '-lang'), next;
+        } elsif (not $pass) {
+            push @nextPass, '-lang';
+            push @nextPass, $langOpt if defined $langOpt;
+            next;
         }
         my $langs = $quiet ? '' : "Available languages:\n";
         $langs .= "  $_ - $Image::ExifTool::langName{$_}\n" foreach @Image::ExifTool::langs;
@@ -1184,9 +1199,9 @@ for (;;) {
         $vout = \*STDERR if $vout =~ /^-(\.\w+)?$/;
         next;
     }
-    /^overwrite_original$/i and $overwriteOrig = 1, next;
-    /^overwrite_original_in_place$/i and $overwriteOrig = 2, next;
-    /^plot$/i and require Image::ExifTool::Plot and $plot = Image::ExifTool::Plot->new, next;
+    $a eq 'overwrite_original' and $overwriteOrig = 1, next;
+    $a eq 'overwrite_original_in_place' and $overwriteOrig = 2, next;
+    $a eq 'plot' and require Image::ExifTool::Plot and $plot = Image::ExifTool::Plot->new, next;
     if (/^p(-?)$/ or /^printformat(-?)$/i) {
         my $fmt = shift;
         if ($pass) {
@@ -1204,7 +1219,7 @@ for (;;) {
         next;
     }
     (/^P$/ or $a eq 'preserve') and $preserveTime = 1, next;
-    /^password$/i and $mt->Options(Password => shift), next;
+    $a eq 'password' and $mt->Options(Password => shift), next;
     if (/^progress(\d*)(:.*)?$/i) {
         $progressIncr = $1 || 1;
         $progressNext = 0; # start showing progress at the first file
@@ -1219,6 +1234,7 @@ for (;;) {
         $progressCount = 0;
         next;
     }
+    /^purge(\d*)$/i and $purge = $1||1, Image::ExifTool::Purge($purge), next; # (undocumented) added in 13.53
     /^q(uiet)?$/i and ++$quiet, next;
     /^r(ecurse)?(\.?)$/i and $recurse = ($2 ? 2 : 1), next;
     if ($a eq 'require') { # (undocumented) added in version 8.65
@@ -1234,10 +1250,10 @@ for (;;) {
         }
         next;
     }
-    /^restore_original$/i and $deleteOrig = 0, next;
+    $a eq 'restore_original' and $deleteOrig = 0, next;
     (/^S$/ or $a eq 'veryshort') and $outFormat+=2, next;
     /^s(hort)?(\d*)$/i and $outFormat = $2 eq '' ? $outFormat + 1 : $2, next;
-    /^scanforxmp$/i and $mt->Options(ScanForXMP => 1), next;
+    $a eq 'scanforxmp' and $mt->Options(ScanForXMP => 1), next;
     if (/^sep(arator)?$/i) {
         my $sep = $listSep = shift;
         defined $listSep or Error("Expecting list item separator for -sep option\n"), $badCmd=1, next;
@@ -1372,7 +1388,7 @@ for (;;) {
         next;
     }
     (/^X$/ or $a eq 'xmlformat') and $xml = 1, $html = $json = 0, $mt->Options(Duplicates => 1), next;
-    if (/^php$/i) {
+    if ($a eq 'php') {
         $json = 2;
         $html = $xml = 0;
         $mt->Options(Duplicates => 1);
@@ -2073,6 +2089,8 @@ if ($countBadWr or $countBadCr or $countBad) {
 } elsif ($countFailed and not ($count or $totWr) and not $rtnVal) {
     $rtnVal = 2;
 }
+
+Image::ExifTool::Purge(0) if $purge;    # do final purging
 
 # clean up after each command
 Cleanup();
@@ -4198,7 +4216,8 @@ sub SetWindowTitle($)
     if ($curTitle ne $title) {
         $curTitle = $title;
         if ($^O eq 'MSWin32') {
-            $title =~ s/([&\/\?:|"<>])/^$1/g;   # escape special chars
+            $title =~ tr(-_a-zA-Z0-9%.+/:=?*@~ )()dc;  # allow only safe characters
+            $title =~ s/([\/?:%])/^$1/g;   # escape remaing questionable chars
             eval { system qq{title $title} };
         } else {
             # (this only works for XTerm terminals, and STDERR must go to the console)
@@ -4253,6 +4272,7 @@ sub ProcessFiles($;$)
                     next if $endDir{$d};
                 }
                 GetImageInfo($et, $file);
+                Image::ExifTool::Purge($purge) if $purge;
                 $end and Warn("End called - $file\n");
                 if ($endDir) {
                     Warn("EndDir called - $file\n");
@@ -4382,6 +4402,7 @@ sub ScanDir($$;$)
             push(@$list, $path);
         } else {
             GetImageInfo($et, $path);
+            Image::ExifTool::Purge($purge) if $purge;
             if ($end) {
                 Warn("End called - $file\n");
                 last;

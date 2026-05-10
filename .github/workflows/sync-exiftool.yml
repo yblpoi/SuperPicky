@@ -1,0 +1,77 @@
+name: Sync ExifTool
+
+on:
+  schedule:
+    - cron: '20 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: Optional ExifTool version override, for example 13.55
+        required: false
+      force:
+        description: Refresh assets even when the recorded version matches
+        required: false
+        default: 'false'
+
+jobs:
+  sync-exiftool:
+    runs-on: macos-14
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v6
+        with:
+          ref: dev
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Sync ExifTool assets
+        id: sync
+        env:
+          TARGET_VERSION: ${{ inputs.target_version }}
+          FORCE_SYNC: ${{ inputs.force }}
+        run: |
+          args=()
+          if [ -n "$TARGET_VERSION" ]; then
+            args+=(--target-version "$TARGET_VERSION")
+          fi
+          if [ "$FORCE_SYNC" = "true" ]; then
+            args+=(--force)
+          fi
+          python scripts/sync_exiftool.py "${args[@]}"
+
+      - name: Verify synchronized macOS assets
+        if: steps.sync.outputs.update_available == 'true'
+        run: |
+          test "$(./exiftools_mac/exiftool -ver)" = "${{ steps.sync.outputs.latest_version }}"
+
+      - name: Verify synchronized Windows asset layout
+        if: steps.sync.outputs.update_available == 'true'
+        run: |
+          test -f exiftools_win/exiftool.exe
+          test -d exiftools_win/exiftool_files
+
+      - name: Create ExifTool sync pull request
+        if: steps.sync.outputs.update_available == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          base: dev
+          branch: automation/sync-exiftool-${{ steps.sync.outputs.latest_version }}
+          delete-branch: true
+          commit-message: "chore: sync ExifTool ${{ steps.sync.outputs.latest_version }}"
+          title: "chore: sync ExifTool ${{ steps.sync.outputs.latest_version }}"
+          body: |
+            Synchronizes ExifTool official production release ${{ steps.sync.outputs.latest_version }}.
+
+            Source: https://exiftool.org/history.html
+            Current recorded version: ${{ steps.sync.outputs.current_version }}
+
+            Verification:
+            - macOS `exiftools_mac/exiftool -ver`
+            - Windows asset layout check
